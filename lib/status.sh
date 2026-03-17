@@ -15,9 +15,9 @@ show_status() {
     echo
   else
     local installed setup_mode secure_boot vendors
-    installed=$(echo "$json" | jq -r '.installed // false')
-    setup_mode=$(echo "$json" | jq -r '.setup_mode // false')
-    secure_boot=$(echo "$json" | jq -r '.secure_boot // false')
+    read -r installed setup_mode secure_boot < <(
+      echo "$json" | jq -r '[.installed, .setup_mode, .secure_boot] | map(. // false) | @tsv'
+    )
     vendors=$(echo "$json" | jq -r '
       .vendors // [] | if type == "array" then
         map(tostring) | sort | unique | join(", ")

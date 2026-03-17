@@ -113,7 +113,7 @@ add_windows_entry() {
     return 1
   fi
 
-  write_windows_entry "$partuuid"
+  write_windows_entry "$partuuid" || return 1
   pass "Windows entry added to limine.conf"
   echo
   echo -e "  ${DIM}Windows will appear in the Limine boot menu on next reboot.${NC}"
@@ -135,6 +135,6 @@ restore_windows_entry() {
   partuuid=$(get_partuuid "$win_dev") || return 0
   [[ -z "$partuuid" ]] && return 0
 
-  write_windows_entry "$partuuid"
+  write_windows_entry "$partuuid" || return 1
   qact "Restored Windows entry in limine.conf"
 }
