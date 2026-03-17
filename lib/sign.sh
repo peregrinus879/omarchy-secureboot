@@ -53,7 +53,7 @@ sign_all_efi() {
   mapfile -t efi_files < <(discover_efi_files)
   [[ ${#efi_files[@]} -eq 0 ]] && die "No EFI files found in ${ESP}/EFI"
 
-  local signed=0 skipped=0
+  local signed=0 skipped=0 failed=0
   local file
   for file in "${efi_files[@]}"; do
     if sbctl verify "$file" >/dev/null 2>&1; then
@@ -65,12 +65,19 @@ sign_all_efi() {
         signed=$((signed + 1))
       else
         warn "Failed to sign: ${file#${ESP}/EFI/}"
+        failed=$((failed + 1))
       fi
     fi
   done
 
   if [[ "$QUIET" != true ]]; then
     echo
-    pass "Signed ${signed}, skipped ${skipped} (already signed)"
+    if [[ $failed -gt 0 ]]; then
+      warn "Signed ${signed}, skipped ${skipped}, failed ${failed}"
+    else
+      pass "Signed ${signed}, skipped ${skipped} (already signed)"
+    fi
+  elif [[ $failed -gt 0 ]]; then
+    warn "Failed to sign ${failed} file(s)"
   fi
 }
