@@ -66,7 +66,7 @@ write_windows_entry() {
 ${WINDOWS_ENTRY_MARKER}
 /Windows
     protocol: efi_chainload
-    image_path: guid://${partuuid}/${BOOTMGFW_REL}
+    image_path: guid(${partuuid}):/${BOOTMGFW_REL}
 EOF
   then
     fail "Failed to write Windows entry to ${LIMINE_CONF}"
