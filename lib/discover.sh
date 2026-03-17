@@ -29,5 +29,5 @@ list_enrolled_paths() {
     else
       empty
     end
-  ' 2>/dev/null || true
+  ' 2>/dev/null
 }
