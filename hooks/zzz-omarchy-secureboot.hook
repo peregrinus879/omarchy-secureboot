@@ -14,5 +14,5 @@ Target = snapper*
 [Action]
 Description = Secure Boot: sign new EFI files
 When = PostTransaction
-Exec = /usr/local/bin/omarchy-secureboot --quiet sign
+Exec = @BINDIR@/omarchy-secureboot --quiet sign
 Depends = sbctl
