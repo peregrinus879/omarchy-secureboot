@@ -60,9 +60,12 @@ sign_all_efi() {
       qpass "${file#${ESP}/EFI/} ${DIM}already signed${NC}"
       skipped=$((skipped + 1))
     else
-      sbctl sign -s "$file"
-      qact "${file#${ESP}/EFI/} ${DIM}signed${NC}"
-      signed=$((signed + 1))
+      if sbctl sign -s "$file"; then
+        qact "${file#${ESP}/EFI/} ${DIM}signed${NC}"
+        signed=$((signed + 1))
+      else
+        warn "Failed to sign: ${file#${ESP}/EFI/}"
+      fi
     fi
   done
 
