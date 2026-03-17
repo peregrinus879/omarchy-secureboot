@@ -7,7 +7,16 @@ readonly BOOTMGFW_REL="EFI/Microsoft/Boot/bootmgfw.efi"
 # Find Windows Boot Manager on any EFI System Partition.
 # Returns the partition device path (e.g., /dev/sdb1) or empty string.
 find_windows_esp() {
-  local dev mountpoint tmpdir found=""
+  local dev mountpoint tmpdir="" found=""
+
+  # Clean up temporary mount on interruption or exit
+  _fwe_cleanup() {
+    [[ -z "$tmpdir" ]] && return
+    umount "$tmpdir" 2>/dev/null || true
+    rmdir "$tmpdir" 2>/dev/null || true
+    tmpdir=""
+  }
+  trap _fwe_cleanup EXIT
 
   # Check partitions typed as EFI System Partition (C12A7328-...)
   while IFS= read -r dev; do
@@ -17,6 +26,7 @@ find_windows_esp() {
     mountpoint=$(findmnt -n -o TARGET "$dev" 2>/dev/null || true)
     if [[ -n "$mountpoint" ]]; then
       if [[ -f "${mountpoint}/${BOOTMGFW_REL}" ]]; then
+        trap - EXIT
         echo "$dev"
         return 0
       fi
@@ -32,12 +42,14 @@ find_windows_esp() {
       umount "$tmpdir" 2>/dev/null
     fi
     rmdir "$tmpdir" 2>/dev/null
+    tmpdir=""
 
-    [[ -n "$found" ]] && { echo "$found"; return 0; }
+    [[ -n "$found" ]] && { trap - EXIT; echo "$found"; return 0; }
   done < <(lsblk -nrpo NAME,PARTTYPE 2>/dev/null \
     | grep -i "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" \
     | awk '{print $1}')
 
+  trap - EXIT
   return 1
 }
 
@@ -49,13 +61,17 @@ get_partuuid() {
 # Write the chainload entry block to limine.conf for a given PARTUUID.
 write_windows_entry() {
   local partuuid="$1"
-  cat >> "$LIMINE_CONF" <<EOF
+  if ! cat >> "$LIMINE_CONF" <<EOF
 
 ${WINDOWS_ENTRY_MARKER}
 /Windows
     protocol: efi_chainload
     image_path: guid://${partuuid}/${BOOTMGFW_REL}
 EOF
+  then
+    fail "Failed to write Windows entry to ${LIMINE_CONF}"
+    return 1
+  fi
 }
 
 # Add a Windows chainload entry to limine.conf (interactive).
