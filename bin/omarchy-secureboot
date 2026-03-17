@@ -43,6 +43,7 @@ cmd_setup() {
 cmd_enroll() {
   header "Key Enrollment"
   check_deps
+  check_efi_mode
   check_root "enroll"
   require_gum
   enroll_keys
