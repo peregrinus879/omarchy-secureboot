@@ -110,8 +110,8 @@ case "${1:-}" in
   windows)  cmd_windows ;;
   sign)     cmd_sign ;;
   status)   cmd_status ;;
-  help|-h)  cmd_help ;;
-  version|-v) echo "omarchy-secureboot ${VERSION}" ;;
+  help|--help|-h)  cmd_help ;;
+  version|--version|-v) echo "omarchy-secureboot ${VERSION}" ;;
   *)
     cmd_help
     [[ -n "${1:-}" ]] && { fail "Unknown command: $1"; echo; exit 1; }
