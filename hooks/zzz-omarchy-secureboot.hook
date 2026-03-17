@@ -1,0 +1,18 @@
+# Omarchy Secure Boot: discover and sign new EFI files (e.g., snapshots).
+# Runs after zz-sbctl.hook and limine-snapper-sync.
+# zz-sbctl.hook re-signs known files; this hook catches new ones.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Package
+Target = linux*
+Target = limine*
+Target = snapper*
+
+[Action]
+Description = Secure Boot: sign new EFI files
+When = PostTransaction
+Exec = /usr/local/bin/omarchy-secureboot --quiet sign
+Depends = sbctl
