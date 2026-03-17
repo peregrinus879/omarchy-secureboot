@@ -114,7 +114,7 @@ Two hooks work together after pacman transactions:
 | Hook | Trigger | Purpose |
 |---|---|---|
 | `zz-sbctl.hook` (sbctl built-in) | All packages | Re-signs files already in sbctl's database |
-| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Discovers and signs NEW EFI files not yet in the database |
+| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Discovers and signs NEW EFI files; restores Windows entry if wiped |
 
 The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after limine-snapper-sync creates snapshot entries.
 
@@ -128,6 +128,8 @@ For separate-SSD setups (SSD 1: Omarchy, SSD 2: Windows), the `windows` command:
 3. Adds a `guid://` PARTUUID-based chainload entry to `limine.conf`
 
 The PARTUUID path lets Limine's UEFI environment access the Windows ESP directly, without requiring it to be mounted in Linux.
+
+If `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`, the Windows entry is lost. The pacman hook automatically restores it by re-detecting the Windows ESP and re-appending the entry. No manual intervention needed.
 
 ### After Setup
 
@@ -185,6 +187,14 @@ ls /usr/share/secureboot/keys/db/db.key 2>/dev/null || ls /var/lib/sbctl/keys/db
 ### Snapshot fails to boot after kernel update
 
 Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs. The pacman hook should handle this automatically; if it didn't, check that the hook file exists at `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`.
+
+### Windows disappeared from Limine boot menu
+
+This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`. The pacman hook restores the entry automatically on the next relevant package update. To restore immediately:
+
+```bash
+sudo omarchy-secureboot sign
+```
 
 ## Design Philosophy
 

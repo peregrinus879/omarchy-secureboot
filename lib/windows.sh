@@ -46,7 +46,19 @@ get_partuuid() {
   blkid -s PARTUUID -o value "$1" 2>/dev/null
 }
 
-# Add a Windows chainload entry to limine.conf.
+# Write the chainload entry block to limine.conf for a given PARTUUID.
+write_windows_entry() {
+  local partuuid="$1"
+  cat >> "$LIMINE_CONF" <<EOF
+
+${WINDOWS_ENTRY_MARKER}
+/Windows
+    protocol: efi_chainload
+    image_path: guid://${partuuid}/${BOOTMGFW_REL}
+EOF
+}
+
+# Add a Windows chainload entry to limine.conf (interactive).
 add_windows_entry() {
   header "Windows Dual-Boot"
 
@@ -85,17 +97,28 @@ add_windows_entry() {
     return 1
   fi
 
-  # Append chainload entry to limine.conf
-  cat >> "$LIMINE_CONF" <<EOF
-
-${WINDOWS_ENTRY_MARKER}
-/Windows
-    protocol: efi_chainload
-    image_path: guid://${partuuid}/${BOOTMGFW_REL}
-EOF
-
+  write_windows_entry "$partuuid"
   pass "Windows entry added to limine.conf"
   echo
   echo -e "  ${DIM}Windows will appear in the Limine boot menu on next reboot.${NC}"
   echo
+}
+
+# Restore the Windows entry if it was wiped (e.g., by omarchy-refresh-limine).
+# Non-interactive: only acts if Windows was previously configured and is now missing.
+restore_windows_entry() {
+  # Already present, nothing to do
+  grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null && return 0
+
+  # Never configured (no Windows ESP found), skip silently
+  local win_dev
+  win_dev=$(find_windows_esp) || return 0
+  [[ -z "$win_dev" ]] && return 0
+
+  local partuuid
+  partuuid=$(get_partuuid "$win_dev") || return 0
+  [[ -z "$partuuid" ]] && return 0
+
+  write_windows_entry "$partuuid"
+  qact "Restored Windows entry in limine.conf"
 }

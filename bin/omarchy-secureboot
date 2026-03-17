@@ -61,6 +61,7 @@ cmd_sign() {
   qheader "Signing EFI Files"
   clean_stale_entries
   sign_all_efi
+  restore_windows_entry
 }
 
 cmd_status() {
