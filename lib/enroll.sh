@@ -26,7 +26,7 @@ enroll_keys() {
 
   # -m: include Microsoft keys (required for Windows dual-boot and Option ROMs)
   # -f: include firmware-builtin keys (safety net for vendor firmware components)
-  sbctl enroll-keys -m -f
+  sbctl enroll-keys -m -f || die "Key enrollment failed"
   pass "Keys enrolled"
 
   echo

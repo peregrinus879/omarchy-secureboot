@@ -16,7 +16,7 @@ create_keys() {
     exit 1
   fi
 
-  sbctl create-keys
+  sbctl create-keys || die "Key creation failed"
   qpass "Signing keys created"
 }
 
