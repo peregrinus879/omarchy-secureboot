@@ -174,6 +174,14 @@ Normal. Microsoft files are signed with Microsoft's own keys, not yours. The fir
 
 Ensure the Windows SSD is connected and visible in BIOS. Check with `lsblk -f`. The command scans all partitions typed as EFI System Partition.
 
+### Key creation or enrollment fails
+
+sbctl stores keys in `/usr/share/secureboot/keys/` (older versions) or `/var/lib/sbctl/keys/` (newer versions). Check both locations if troubleshooting key issues:
+
+```bash
+ls /usr/share/secureboot/keys/db/db.key 2>/dev/null || ls /var/lib/sbctl/keys/db/db.key
+```
+
 ### Snapshot fails to boot after kernel update
 
 Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs. The pacman hook should handle this automatically; if it didn't, check that the hook file exists at `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`.
