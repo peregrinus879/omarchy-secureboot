@@ -17,7 +17,7 @@ readonly NC='\033[0m'
 
 # --- Output helpers ----------------------------------------------------------
 
-header() { echo -e "\n${BOLD}omarchy-secureboot${NC} ${DIM}—${NC} ${BOLD}$*${NC}\n"; }
+header() { echo -e "\n${BOLD}omarchy-secureboot${NC} ${DIM}-${NC} ${BOLD}$*${NC}\n"; }
 pass()   { echo -e "  ${GREEN}✓${NC} $*"; }
 fail()   { echo -e "  ${RED}✗${NC} $*"; }
 warn()   { echo -e "  ${YELLOW}!${NC} $*"; }
