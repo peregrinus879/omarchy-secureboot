@@ -4,7 +4,7 @@
 # Find all signable EFI files under the ESP.
 # Excludes Microsoft files (trusted via -m enrollment), 32-bit bootloader, backups.
 discover_efi_files() {
-  find "${ESP}" -type f \( -name "*.efi" -o -name "*.EFI" \) \
+  find "${ESP}" -type f \( -name "*.efi" -o -name "*.EFI" -o -name "*.efi_sha256_*" \) \
     ! -path "*/Microsoft/*" \
     ! -name "BOOTIA32.EFI" \
     ! -name "*.bak" \

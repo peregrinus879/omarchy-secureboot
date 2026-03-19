@@ -37,7 +37,7 @@ Cloned in the sibling `../upstream/` directory:
 
 ## Technical Notes
 
-- **Snapshot UKI naming**: limine-snapper-sync creates snapshot UKIs with the pattern `filename.efi_sha256_[64-hex-chars]`. The SHA256 suffix is the content hash embedded in the filename. `discover_efi_files()` finds these via the generic `*.efi` glob; no special handling is needed unless filtering by snapshot vs. current kernel becomes necessary.
+- **Snapshot UKI naming**: limine-snapper-sync creates snapshot UKIs with the pattern `filename.efi_sha256_[64-hex-chars]`. The SHA256 suffix is the content hash embedded in the filename. These do NOT match `*.efi` (the extension is mid-filename), so `discover_efi_files()` includes an explicit `*.efi_sha256_*` glob to find them.
 - **sbctl `-g` flag risk**: `zz-sbctl.hook` runs `sbctl sign-all -g`. The `-g` flag tells sbctl to generate/rebuild UKI bundles. With `CUSTOM_UKI_NAME="omarchy"` and limine-entry-tool building UKIs (limine-entry-tool disabled its own `sb_sign()` since v1.24.0-2), the `-g` flag should be a no-op. If it causes issues, the fallback is replacing `zz-sbctl.hook` with a custom hook that runs `sbctl sign-all` without `-g`.
 
 ## Conventions
