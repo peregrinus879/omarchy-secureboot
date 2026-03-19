@@ -71,7 +71,7 @@ cmd_sign() {
 }
 
 cmd_status() {
-  check_deps
+  check_core_deps
   show_status
 }
 
