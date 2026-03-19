@@ -73,7 +73,7 @@ Checks that firmware is in Setup Mode, then enrolls signing keys with:
 
 ### `windows`
 
-Detects Windows Boot Manager on any EFI System Partition (including separate SSDs). Temporarily mounts partitions as needed. Adds a Limine chainload entry using `guid://` PARTUUID-based paths so it works at UEFI boot time regardless of mount state.
+Detects Windows Boot Manager on any EFI System Partition (including separate SSDs). Temporarily mounts partitions as needed. Adds a Limine chainload entry using `guid(<PARTUUID>):/` paths so it works at UEFI boot time regardless of mount state.
 
 ### `status`
 
@@ -125,7 +125,7 @@ The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after limine-s
 For separate-SSD setups (SSD 1: Omarchy, SSD 2: Windows), the `windows` command:
 1. Scans all EFI System Partitions via `lsblk`/`blkid`
 2. Temporarily mounts partitions to verify `bootmgfw.efi`
-3. Adds a `guid://` PARTUUID-based chainload entry to `limine.conf`
+3. Adds a `guid(<PARTUUID>):/` chainload entry to `limine.conf`
 
 The PARTUUID path lets Limine's UEFI environment access the Windows ESP directly, without requiring it to be mounted in Linux.
 
