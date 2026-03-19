@@ -39,9 +39,9 @@ clean_stale_entries() {
   local file
   for file in "${removable[@]}"; do
     if sbctl remove-file "$file" >/dev/null 2>&1; then
-      qpass "${file#${ESP}/EFI/}"
+      qpass "${file#${ESP}/}"
     else
-      warn "Could not remove: ${file#${ESP}/EFI/}"
+      warn "Could not remove: ${file#${ESP}/}"
     fi
   done
 }
@@ -51,20 +51,23 @@ clean_stale_entries() {
 sign_all_efi() {
   local -a efi_files
   mapfile -t efi_files < <(discover_efi_files)
-  [[ ${#efi_files[@]} -eq 0 ]] && die "No EFI files found in ${ESP}/EFI"
+  [[ ${#efi_files[@]} -eq 0 ]] && die "No EFI files found in ${ESP}"
 
   local signed=0 skipped=0 failed=0
-  local file
+  local file is_signed
   for file in "${efi_files[@]}"; do
-    if sbctl verify "$file" >/dev/null 2>&1; then
-      qpass "${file#${ESP}/EFI/} ${DIM}already signed${NC}"
+    # sbctl verify exits 0 regardless of result; parse JSON for actual status
+    is_signed=$(sbctl verify --json "$file" 2>/dev/null \
+      | jq -r '.[0].is_signed // empty') || true
+    if [[ "$is_signed" == "1" ]]; then
+      qpass "${file#${ESP}/} ${DIM}already signed${NC}"
       skipped=$((skipped + 1))
     else
       if sbctl sign -s "$file"; then
-        qact "${file#${ESP}/EFI/} ${DIM}signed${NC}"
+        qact "${file#${ESP}/} ${DIM}signed${NC}"
         signed=$((signed + 1))
       else
-        warn "Failed to sign: ${file#${ESP}/EFI/}"
+        warn "Failed to sign: ${file#${ESP}/}"
         failed=$((failed + 1))
       fi
     fi

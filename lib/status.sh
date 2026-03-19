@@ -66,9 +66,12 @@ show_status() {
     if [[ ${#enrolled[@]} -eq 0 ]]; then
       warn "No files in sbctl database"
     else
-      local file all_ok=true
+      local file all_ok=true is_signed
       for file in "${enrolled[@]}"; do
-        if sbctl verify "$file" >/dev/null 2>&1; then
+        # sbctl verify exits 0 regardless of result; parse JSON for actual status
+        is_signed=$(sbctl verify --json "$file" 2>/dev/null \
+          | jq -r '.[0].is_signed // empty') || true
+        if [[ "$is_signed" == "1" ]]; then
           echo -e "    ${GREEN}✓${NC} $file"
         else
           echo -e "    ${RED}✗${NC} $file"
