@@ -5,11 +5,15 @@ check_root() {
   [[ $EUID -eq 0 ]] || die "Root required. Run: ${BOLD}sudo omarchy-secureboot ${1:-}${NC}"
 }
 
-check_deps() {
+check_core_deps() {
   command -v sbctl >/dev/null 2>&1 \
     || die "sbctl not installed. Run: ${BOLD}sudo pacman -S sbctl${NC}"
   command -v jq >/dev/null 2>&1 \
     || die "jq not installed. Run: ${BOLD}sudo pacman -S jq${NC}"
+}
+
+check_deps() {
+  check_core_deps
   [[ -d "${ESP}/EFI" ]] \
     || die "${ESP}/EFI not found. Is the EFI partition mounted?"
 }
