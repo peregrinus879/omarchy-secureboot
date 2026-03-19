@@ -95,7 +95,7 @@ Prints the version number.
 
 ### EFI File Discovery
 
-Finds all `.efi`/`.EFI` files under `/boot/EFI` and excludes:
+Finds all `.efi`/`.EFI` files under `/boot`, plus snapshot UKIs matching `*.efi_sha256_*` (created by limine-snapper-sync with a content hash in the filename). Excludes:
 
 | Pattern | Reason |
 |---|---|
