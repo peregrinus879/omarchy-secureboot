@@ -2,7 +2,6 @@
 # omarchy-secureboot: status display and file verification
 
 show_status() {
-  command -v sbctl >/dev/null 2>&1 || { header "Secure Boot Status"; die "sbctl not installed"; }
   header "Secure Boot Status"
 
   # Parse sbctl status
@@ -58,6 +57,7 @@ show_status() {
   fi
 
   # Enrolled files (root only)
+  local all_ok=true
   if [[ $EUID -eq 0 ]]; then
     echo
     echo -e "  ${BOLD}Enrolled Files${NC}"
@@ -66,7 +66,7 @@ show_status() {
     if [[ ${#enrolled[@]} -eq 0 ]]; then
       warn "No files in sbctl database"
     else
-      local file all_ok=true is_signed
+      local file is_signed
       for file in "${enrolled[@]}"; do
         # sbctl verify exits 0 regardless of result; parse JSON for actual status
         is_signed=$(sbctl verify --json "$file" 2>/dev/null \
@@ -90,4 +90,6 @@ show_status() {
     echo -e "  ${DIM}Run as root for file verification: ${BOLD}sudo omarchy-secureboot status${NC}"
   fi
   echo
+
+  [[ "$all_ok" == true ]]
 }

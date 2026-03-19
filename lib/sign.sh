@@ -13,7 +13,7 @@ create_keys() {
 
   if ! gum confirm "Create new sbctl signing keys?"; then
     warn "Aborted"
-    exit 1
+    return 1
   fi
 
   sbctl create-keys || die "Key creation failed"
@@ -63,7 +63,13 @@ sign_all_efi() {
       qpass "${file#${ESP}/} ${DIM}already signed${NC}"
       skipped=$((skipped + 1))
     else
-      if sbctl sign -s "$file"; then
+      local _sign_rc=0
+      if [[ "$QUIET" == true ]]; then
+        sbctl sign -s "$file" >/dev/null || _sign_rc=$?
+      else
+        sbctl sign -s "$file" || _sign_rc=$?
+      fi
+      if [[ $_sign_rc -eq 0 ]]; then
         qact "${file#${ESP}/} ${DIM}signed${NC}"
         signed=$((signed + 1))
       else

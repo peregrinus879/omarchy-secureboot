@@ -14,14 +14,14 @@ enroll_keys() {
     echo "    2. Clear/reset Secure Boot keys"
     echo -e "    3. Save, reboot, run ${BOLD}sudo omarchy-secureboot enroll${NC}"
     echo
-    exit 1
+    return 1
   fi
 
   pass "Firmware is in Setup Mode"
 
   if ! gum confirm "Enroll keys? (includes Microsoft + firmware-builtin)"; then
     warn "Aborted"
-    exit 1
+    return 1
   fi
 
   # -m: include Microsoft keys (required for Windows dual-boot and Option ROMs)
