@@ -29,7 +29,8 @@ cmd_setup() {
 
   echo
   echo -e "  ${BOLD}Signing EFI files${NC}"
-  sign_all_efi
+  local sign_rc=0
+  sign_all_efi || sign_rc=$?
 
   echo
   echo -e "  ${BOLD}Next steps${NC}"
@@ -38,6 +39,8 @@ cmd_setup() {
   echo "    3. Save and exit BIOS"
   echo -e "    4. Run ${BOLD}sudo omarchy-secureboot enroll${NC}"
   echo
+
+  return $sign_rc
 }
 
 cmd_enroll() {
@@ -61,8 +64,10 @@ cmd_sign() {
   check_root "sign"
   qheader "Signing EFI Files"
   clean_stale_entries
-  sign_all_efi
+  local sign_rc=0
+  sign_all_efi || sign_rc=$?
   restore_windows_entry || true
+  return $sign_rc
 }
 
 cmd_status() {

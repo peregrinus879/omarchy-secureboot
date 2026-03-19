@@ -83,4 +83,6 @@ sign_all_efi() {
   elif [[ $failed -gt 0 ]]; then
     warn "Failed to sign ${failed} file(s)"
   fi
+
+  [[ $failed -eq 0 ]]
 }
