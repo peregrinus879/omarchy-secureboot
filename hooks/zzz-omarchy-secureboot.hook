@@ -16,3 +16,4 @@ Description = Secure Boot: sign new EFI files
 When = PostTransaction
 Exec = @BINDIR@/omarchy-secureboot --quiet sign
 Depends = sbctl
+Depends = jq
