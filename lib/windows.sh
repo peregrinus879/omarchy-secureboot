@@ -99,7 +99,7 @@ add_windows_entry() {
   fi
 
   local partuuid
-  partuuid=$(get_partuuid "$win_dev")
+  partuuid=$(get_partuuid "$win_dev") || true
   if [[ -z "$partuuid" ]]; then
     fail "Could not determine PARTUUID for ${win_dev}"
     return 1
