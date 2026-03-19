@@ -4,6 +4,7 @@
 readonly VERSION="1.0.0"
 readonly ESP="/boot"
 readonly LIMINE_CONF="${ESP}/limine.conf"
+readonly STATE_DIR="/var/lib/omarchy-secureboot"
 
 # --- Colors ------------------------------------------------------------------
 

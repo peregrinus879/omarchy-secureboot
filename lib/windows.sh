@@ -114,6 +114,8 @@ add_windows_entry() {
   fi
 
   write_windows_entry "$partuuid" || return 1
+  mkdir -p "$STATE_DIR"
+  touch "${STATE_DIR}/windows-enabled"
   pass "Windows entry added to limine.conf"
   echo
   echo -e "  ${DIM}Windows will appear in the Limine boot menu on next reboot.${NC}"
@@ -121,12 +123,14 @@ add_windows_entry() {
 }
 
 # Restore the Windows entry if it was wiped (e.g., by omarchy-refresh-limine).
-# Non-interactive: only acts if Windows was previously configured and is now missing.
+# Non-interactive: only acts if user previously opted in via 'windows' command.
 restore_windows_entry() {
   # Already present, nothing to do
   grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null && return 0
 
-  # Never configured (no Windows ESP found), skip silently
+  # Never opted in via 'omarchy-secureboot windows', skip
+  [[ -f "${STATE_DIR}/windows-enabled" ]] || return 0
+
   local win_dev
   win_dev=$(find_windows_esp) || return 0
   [[ -z "$win_dev" ]] && return 0
