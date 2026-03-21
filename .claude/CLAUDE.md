@@ -18,7 +18,7 @@ Single dispatcher sources lib modules. Each lib file owns one concern:
 - `discover.sh` - EFI file discovery, sbctl database queries (jq)
 - `sign.sh` - key creation, signing with `-s` (database registration), stale entry cleanup, Limine verification config
 - `enroll.sh` - key enrollment with `-m -f` flags
-- `windows.sh` - Windows ESP detection across SSDs, PARTUUID-based Limine chainload entry
+- `windows.sh` - Windows ESP detection, PARTUUID-based Limine chainload entry
 - `status.sh` - status display, hook checks, enrolled file verification
 
 ## Dependencies

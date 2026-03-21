@@ -24,7 +24,7 @@ Creates signing keys, signs EFI files, enrolls keys into firmware, and adds Wind
 - [gum](https://github.com/charmbracelet/gum) - interactive prompts (setup, enroll, windows)
 - UEFI firmware with Secure Boot support
 - EFI System Partition mounted at `/boot`
-- For dual-boot: Windows on a separate SSD with its own ESP (the `windows` command handles cross-SSD discovery)
+- For dual-boot: Windows with its own EFI System Partition
 
 ```bash
 sudo pacman -S --needed sbctl jq gum
@@ -93,7 +93,7 @@ Checks that firmware is in Setup Mode, then enrolls signing keys with:
 
 ### `windows`
 
-Detects Windows Boot Manager on any EFI System Partition (including separate SSDs). Temporarily mounts partitions as needed. Adds a Limine chainload entry using `guid(<PARTUUID>):/` paths so it works at UEFI boot time regardless of mount state.
+Detects Windows Boot Manager on any EFI System Partition. Temporarily mounts partitions as needed. Adds a Limine chainload entry using `guid(<PARTUUID>):/` paths so it works at UEFI boot time regardless of mount state.
 
 ### `status`
 
@@ -142,7 +142,7 @@ The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after limine-s
 
 ### Windows Chainload Entry
 
-For separate-SSD setups (SSD 1: Omarchy, SSD 2: Windows), the `windows` command:
+For dual-boot setups where Windows has its own EFI System Partition, the `windows` command:
 1. Scans all EFI System Partitions via `lsblk`/`blkid`
 2. Temporarily mounts partitions to verify `bootmgfw.efi`
 3. Adds a `guid(<PARTUUID>):/` chainload entry to `limine.conf` with `comment: Windows Boot Manager` for the boot menu description
@@ -195,7 +195,7 @@ Normal. Microsoft files are signed with Microsoft's own keys, not yours. The fir
 
 ### Windows not found by `windows` command
 
-Ensure the Windows SSD is connected and visible in BIOS. Check with `lsblk -f`. The command scans all partitions typed as EFI System Partition.
+Ensure the Windows disk is connected and visible in BIOS. Check with `lsblk -f`. The command scans all partitions typed as EFI System Partition.
 
 ### Key creation or enrollment fails
 
