@@ -30,6 +30,14 @@ Creates signing keys, signs EFI files, enrolls keys into firmware, and adds Wind
 sudo pacman -S sbctl jq gum
 ```
 
+### Before You Begin (Dual-Boot with Windows)
+
+If your Windows installation uses BitLocker drive encryption:
+
+1. **Back up your BitLocker recovery key** before starting. Enrolling custom Secure Boot keys changes the firmware's Secure Boot policy, which triggers BitLocker recovery on the next Windows boot.
+2. Find your recovery key at [aka.ms/myrecoverykey](https://aka.ms/myrecoverykey) (requires your Microsoft account), or check for a saved copy (USB drive, printout, Azure AD).
+3. After enrollment, Windows will prompt for the recovery key once. Enter it to unlock the drive. Subsequent boots work normally.
+
 ## Installation
 
 ```bash
@@ -47,14 +55,26 @@ To uninstall: `sudo make uninstall`
 
 ## Quick Start
 
-Two commands, two reboots, then optionally add Windows:
+**Step 1** - Create keys and sign EFI files:
 
+```bash
+sudo omarchy-secureboot setup
 ```
-sudo omarchy-secureboot setup       # 1. Create keys, sign EFI files
-                                     # 2. Reboot -> BIOS -> clear Secure Boot keys (Setup Mode)
-sudo omarchy-secureboot enroll      # 3. Enroll keys into firmware
-                                     # 4. Reboot -> BIOS -> enable Secure Boot
-sudo omarchy-secureboot windows     # 5. Add Windows to Limine boot menu (if dual-booting)
+
+**Step 2** - Reboot into BIOS/UEFI, clear Secure Boot keys (enter Setup Mode), save and exit.
+
+**Step 3** - Enroll keys into firmware:
+
+```bash
+sudo omarchy-secureboot enroll
+```
+
+**Step 4** - Reboot into BIOS/UEFI, enable Secure Boot, save and exit.
+
+**Step 5** *(dual-boot only)* - Add Windows to Limine boot menu:
+
+```bash
+sudo omarchy-secureboot windows
 ```
 
 Done. Hooks handle re-signing automatically after every pacman transaction.
@@ -63,7 +83,7 @@ Done. Hooks handle re-signing automatically after every pacman transaction.
 
 ### `setup`
 
-Creates signing keys (or skips if they exist), cleans stale sbctl database entries, discovers all EFI files on the ESP, and signs them with `-s` (registering in sbctl's database).
+Creates signing keys (or skips if they exist), disables Limine's Blake2b hash verification (redundant with Secure Boot), regenerates boot entries, cleans stale sbctl database entries, discovers all EFI files on the ESP, and signs them with `-s` (registering in sbctl's database).
 
 ### `enroll`
 
@@ -138,8 +158,9 @@ The ongoing maintenance chain:
 ```
 Kernel update
   -> mkinitcpio builds UKI
-  -> zz-sbctl.hook re-signs it (already in database)
-  -> limine-entry-tool updates limine.conf with correct hash
+  -> limine-entry-tool updates limine.conf (hash-free, verification disabled)
+  -> zz-sbctl.hook re-signs UKI (already in database)
+  -> zzz-omarchy-secureboot.hook discovers and signs any new files
 
 Snapshot creation
   -> limine-snapper-sync copies UKI to snapshot location
@@ -206,8 +227,8 @@ This tool handles the parts of Secure Boot that nothing else automates:
 It deliberately delegates everything else:
 
 - **Ongoing re-signing** of known files: `zz-sbctl.hook`
-- **Hash management** in limine.conf: `limine-entry-tool`
 - **UKI building**: `mkinitcpio`
+- **Boot entry management** in limine.conf: `limine-entry-tool`
 - **Snapshot boot entries**: `limine-snapper-sync`
 
 Don't automate what's already automated. Fill the gaps that aren't.

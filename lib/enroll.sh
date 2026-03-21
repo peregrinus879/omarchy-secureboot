@@ -19,6 +19,10 @@ enroll_keys() {
 
   pass "Firmware is in Setup Mode"
 
+  echo
+  warn "If Windows uses BitLocker, have your recovery key ready before proceeding"
+  act  "Find it at: aka.ms/myrecoverykey"
+
   if ! gum confirm "Enroll keys? (includes Microsoft + firmware-builtin)"; then
     warn "Aborted"
     return 1
