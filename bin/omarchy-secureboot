@@ -25,12 +25,28 @@ cmd_setup() {
   require_gum
 
   create_keys
+
+  # Disable Limine hash verification; regenerate entries without hashes.
+  # limine-update rebuilds UKIs (unsigned) so sign_all_efi re-signs them below.
+  local need_limine_update=false
+  if disable_limine_verification; then
+    need_limine_update=true
+  fi
+  if $need_limine_update && command -v limine-update >/dev/null 2>&1; then
+    act "Regenerating boot entries without hashes"
+    limine-update
+  fi
+  strip_limine_hashes
+
   clean_stale_entries
 
   echo
   echo -e "  ${BOLD}Signing EFI files${NC}"
   local sign_rc=0
   sign_all_efi || sign_rc=$?
+
+  restore_windows_entry || true
+  upgrade_windows_entry || true
 
   echo
   echo -e "  ${BOLD}Next steps${NC}"
@@ -66,7 +82,9 @@ cmd_sign() {
   clean_stale_entries
   local sign_rc=0
   sign_all_efi || sign_rc=$?
+  strip_limine_hashes
   restore_windows_entry || true
+  upgrade_windows_entry || true
   return $sign_rc
 }
 
