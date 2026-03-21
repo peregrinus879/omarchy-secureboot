@@ -65,6 +65,7 @@ write_windows_entry() {
 
 ${WINDOWS_ENTRY_MARKER}
 /Windows
+    comment: Windows Boot Manager
     protocol: efi_chainload
     image_path: guid(${partuuid}):/${BOOTMGFW_REL}
 EOF
@@ -120,6 +121,22 @@ add_windows_entry() {
   echo
   echo -e "  ${DIM}Windows will appear in the Limine boot menu on next reboot.${NC}"
   echo
+}
+
+# Upgrade existing Windows entry to include comment if missing.
+upgrade_windows_entry() {
+  [[ -f "$LIMINE_CONF" ]] || return 0
+  grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" || return 0
+  grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q 'comment:' && return 0
+
+  local partuuid
+  partuuid=$(grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" \
+    | grep 'image_path:' | sed 's/.*guid(\([^)]*\)).*/\1/')
+  [[ -z "$partuuid" ]] && return 0
+
+  sed -i "/${WINDOWS_ENTRY_MARKER}/,\$d" "$LIMINE_CONF"
+  write_windows_entry "$partuuid"
+  qact "Upgraded Windows entry with description"
 }
 
 # Restore the Windows entry if it was wiped (e.g., by omarchy-refresh-limine).
