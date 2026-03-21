@@ -79,6 +79,7 @@ cmd_sign() {
   check_deps
   check_root "sign"
   qheader "Signing EFI Files"
+  disable_limine_verification || true
   clean_stale_entries
   local sign_rc=0
   sign_all_efi || sign_rc=$?
