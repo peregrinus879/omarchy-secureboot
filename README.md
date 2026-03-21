@@ -27,7 +27,7 @@ Creates signing keys, signs EFI files, enrolls keys into firmware, and adds Wind
 - For dual-boot: Windows on a separate SSD with its own ESP (the `windows` command handles cross-SSD discovery)
 
 ```bash
-sudo pacman -S sbctl jq gum
+sudo pacman -S --needed sbctl jq gum
 ```
 
 ### Before You Begin (Dual-Boot with Windows)
@@ -101,7 +101,7 @@ Shows Secure Boot state, hook status, Windows entry, and enrolled file verificat
 
 ### `sign`
 
-Re-discovers and re-signs all EFI files. Same logic as setup but without key creation. Used manually or by the pacman hook.
+Re-discovers and re-signs all EFI files. Also ensures hash verification stays disabled (self-healing against package updates that may reset `/etc/default/limine`), strips any stale Blake2b hashes, and restores/upgrades the Windows entry. Used manually or by the pacman hook.
 
 ### `help`
 
@@ -134,18 +134,18 @@ Two hooks work together after pacman transactions:
 | Hook | Trigger | Purpose |
 |---|---|---|
 | `zz-sbctl.hook` (sbctl built-in) | All packages | Re-signs files already in sbctl's database |
-| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Discovers and signs NEW EFI files; restores Windows entry if wiped |
+| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Discovers and signs NEW EFI files; strips stale hashes; restores Windows entry if wiped |
 
 The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after limine-snapper-sync creates snapshot entries.
 
-**Why this matters:** With Secure Boot enabled, the UEFI firmware verifies ALL EFI binaries it loads, including snapshot UKIs. An unsigned snapshot will fail to boot, not just warn. The `hash_mismatch_panic: no` setting in `limine.conf` only controls Limine's own hash checking, not firmware signature verification.
+**Why this matters:** With Secure Boot enabled, the UEFI firmware verifies ALL EFI binaries it loads, including snapshot UKIs. An unsigned snapshot will fail to boot, not just warn. Disabling Limine's hash verification (which this tool does) only affects Limine's own checking, not the firmware's cryptographic signature verification.
 
 ### Windows Chainload Entry
 
 For separate-SSD setups (SSD 1: Omarchy, SSD 2: Windows), the `windows` command:
 1. Scans all EFI System Partitions via `lsblk`/`blkid`
 2. Temporarily mounts partitions to verify `bootmgfw.efi`
-3. Adds a `guid(<PARTUUID>):/` chainload entry to `limine.conf`
+3. Adds a `guid(<PARTUUID>):/` chainload entry to `limine.conf` with `comment: Windows Boot Manager` for the boot menu description
 
 The PARTUUID path lets Limine's UEFI environment access the Windows ESP directly, without requiring it to be mounted in Linux.
 
@@ -160,16 +160,16 @@ Kernel update
   -> mkinitcpio builds UKI
   -> limine-entry-tool updates limine.conf (hash-free, verification disabled)
   -> zz-sbctl.hook re-signs UKI (already in database)
-  -> zzz-omarchy-secureboot.hook discovers and signs any new files
+  -> zzz-omarchy-secureboot.hook signs new files, strips stale hashes
 
 Snapshot creation
   -> limine-snapper-sync copies UKI to snapshot location
-  -> zzz-omarchy-secureboot.hook discovers and signs the new snapshot UKI
+  -> zzz-omarchy-secureboot.hook signs new snapshot UKI, strips stale hashes
 
 Bootloader update
   -> Limine hook copies fresh bootloader files
   -> zz-sbctl.hook re-signs bootloader files
-  -> zzz-omarchy-secureboot.hook catches any new files
+  -> zzz-omarchy-secureboot.hook signs new files, strips stale hashes
 ```
 
 ## Troubleshooting
@@ -217,11 +217,21 @@ This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine
 sudo omarchy-secureboot sign
 ```
 
+### Limine shows hash mismatch warning on boot
+
+A package update may have re-enabled hash verification in `/etc/default/limine`. Run:
+
+```bash
+sudo omarchy-secureboot sign
+```
+
+This re-disables verification and strips stale hashes from `limine.conf`. The pacman hook does this automatically on relevant package updates.
+
 ## Design Philosophy
 
 This tool handles the parts of Secure Boot that nothing else automates:
 
-- **One-time setup**: Key creation, initial signing, key enrollment, Windows chainload entry
+- **One-time setup**: Key creation, hash verification disabled, initial signing, key enrollment, Windows chainload entry
 - **Ongoing gap**: Discovering and signing new EFI files (snapshots) that `zz-sbctl.hook` misses
 
 It deliberately delegates everything else:

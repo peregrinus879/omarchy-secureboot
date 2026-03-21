@@ -7,7 +7,7 @@ Secure Boot setup tool for Omarchy (Arch Linux + Limine) with Windows dual-boot 
 - `README.md` - User documentation, design philosophy, troubleshooting
 - `bin/omarchy-secureboot` - Entry point and command dispatcher
 - `lib/*.sh` - Modular function libraries (common, checks, discover, sign, enroll, windows, status)
-- `hooks/zzz-omarchy-secureboot.hook` - Pacman hook for signing new snapshot UKIs
+- `hooks/zzz-omarchy-secureboot.hook` - Pacman hook that runs `sign` after kernel, bootloader, or snapshot updates
 - `Makefile` - Install/uninstall targets
 
 ## Architecture
@@ -38,7 +38,7 @@ Cloned in the sibling `../upstream/` directory:
 ## Technical Notes
 
 - **Snapshot UKI naming**: limine-snapper-sync creates snapshot UKIs with the pattern `filename.efi_sha256_[64-hex-chars]`. The SHA256 suffix is the content hash embedded in the filename. These do NOT match `*.efi` (the extension is mid-filename), so `discover_efi_files()` includes an explicit `*.efi_sha256_*` glob to find them.
-- **Limine hash verification disabled**: `setup` sets `ENABLE_VERIFICATION=no` in `/etc/default/limine`. With Secure Boot active, UEFI firmware signature verification supersedes Limine's Blake2b hash check. Without this, signing EFI files invalidates the pre-computed hashes in limine.conf, causing a boot warning that requires pressing Y.
+- **Limine hash verification disabled**: `setup` sets `ENABLE_VERIFICATION=no` in `/etc/default/limine`. With Secure Boot active, UEFI firmware signature verification supersedes Limine's Blake2b hash check. Without this, signing EFI files invalidates the pre-computed hashes in limine.conf, causing a boot warning that requires pressing Y. The `sign` command (and therefore the pacman hook) re-applies this setting on every run, self-healing against package updates that reset the config.
 - **sbctl `-g` flag risk**: `zz-sbctl.hook` runs `sbctl sign-all -g`. The `-g` flag tells sbctl to generate/rebuild UKI bundles. With `CUSTOM_UKI_NAME="omarchy"` and limine-entry-tool building UKIs (limine-entry-tool disabled its own `sb_sign()` since v1.24.0-2), the `-g` flag should be a no-op. If it causes issues, the fallback is replacing `zz-sbctl.hook` with a custom hook that runs `sbctl sign-all` without `-g`.
 
 ## Conventions
