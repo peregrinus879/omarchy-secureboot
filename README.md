@@ -83,7 +83,7 @@ Done. Hooks handle re-signing automatically after every pacman transaction.
 
 ### `setup`
 
-Creates signing keys (or skips if they exist), disables Limine's Blake2b hash verification (redundant with Secure Boot), regenerates boot entries, cleans stale sbctl database entries, discovers all EFI files on the ESP, and signs them with `-s` (registering in sbctl's database).
+Creates signing keys (or skips if they exist), disables Limine's Blake2b hash verification (incompatible with Secure Boot signing), regenerates boot entries, cleans stale sbctl database entries, discovers all EFI files on the ESP, and signs them with `-s` (registering in sbctl's database).
 
 ### `enroll`
 
@@ -138,7 +138,9 @@ Two hooks work together after pacman transactions:
 
 The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after limine-snapper-sync creates snapshot entries.
 
-**Why this matters:** With Secure Boot enabled, the UEFI firmware verifies ALL EFI binaries it loads, including snapshot UKIs. An unsigned snapshot will fail to boot, not just warn. Disabling Limine's hash verification (which this tool does) only affects Limine's own checking, not the firmware's cryptographic signature verification.
+**Why this matters:** With Secure Boot enabled, the UEFI firmware verifies ALL EFI binaries it loads, including snapshot UKIs. An unsigned snapshot will fail to boot, not just warn.
+
+**Why hash verification is disabled:** Signing an EFI file changes its content, which invalidates the pre-computed Blake2b hash in `limine.conf`. With hashes enabled, Limine detects the mismatch and displays a boot warning requiring manual confirmation (press Y). Disabling Limine's hash verification avoids this. It is safe because UEFI firmware signature verification, which is strictly stronger, supersedes it.
 
 ### Windows Chainload Entry
 
@@ -174,16 +176,13 @@ Bootloader update
 
 ## Troubleshooting
 
-### Secure Boot enabled but system won't boot
+### Key creation or enrollment fails
 
-Boot into BIOS, temporarily disable Secure Boot, boot into Linux, then:
+sbctl stores keys in `/usr/share/secureboot/keys/` (older versions) or `/var/lib/sbctl/keys/` (newer versions). Check both locations if troubleshooting key issues:
 
 ```bash
-sudo omarchy-secureboot status    # Check what's unsigned
-sudo omarchy-secureboot sign      # Re-sign everything
+ls /usr/share/secureboot/keys/db/db.key 2>/dev/null || ls /var/lib/sbctl/keys/db/db.key
 ```
-
-Re-enable Secure Boot after confirming all files verify.
 
 ### `enroll` says firmware is not in Setup Mode
 
@@ -197,25 +196,20 @@ Normal. Microsoft files are signed with Microsoft's own keys, not yours. The fir
 
 Ensure the Windows disk is connected and visible in BIOS. Check with `lsblk -f`. The command scans all partitions typed as EFI System Partition.
 
-### Key creation or enrollment fails
+### Secure Boot enabled but system won't boot
 
-sbctl stores keys in `/usr/share/secureboot/keys/` (older versions) or `/var/lib/sbctl/keys/` (newer versions). Check both locations if troubleshooting key issues:
+Boot into BIOS, temporarily disable Secure Boot, boot into Linux, then:
 
 ```bash
-ls /usr/share/secureboot/keys/db/db.key 2>/dev/null || ls /var/lib/sbctl/keys/db/db.key
+sudo omarchy-secureboot status    # Check what's unsigned
+sudo omarchy-secureboot sign      # Re-sign everything
 ```
+
+Re-enable Secure Boot after confirming all files verify.
 
 ### Snapshot fails to boot after kernel update
 
 Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs. The pacman hook should handle this automatically; if it didn't, check that the hook file exists at `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`.
-
-### Windows disappeared from Limine boot menu
-
-This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`. The pacman hook restores the entry automatically on the next relevant package update. To restore immediately:
-
-```bash
-sudo omarchy-secureboot sign
-```
 
 ### Limine shows hash mismatch warning on boot
 
@@ -226,6 +220,14 @@ sudo omarchy-secureboot sign
 ```
 
 This re-disables verification and strips stale hashes from `limine.conf`. The pacman hook does this automatically on relevant package updates.
+
+### Windows disappeared from Limine boot menu
+
+This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`. The pacman hook restores the entry automatically on the next relevant package update. To restore immediately:
+
+```bash
+sudo omarchy-secureboot sign
+```
 
 ## Design Philosophy
 
