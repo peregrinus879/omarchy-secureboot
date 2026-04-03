@@ -93,7 +93,7 @@ Checks that firmware is in Setup Mode, then enrolls signing keys with:
 
 ### `windows`
 
-Detects Windows Boot Manager on any EFI System Partition. Temporarily mounts partitions as needed. Adds a Limine chainload entry using `guid(<PARTUUID>):/` paths so it works at UEFI boot time regardless of mount state.
+Detects Windows Boot Manager on any EFI System Partition. Temporarily mounts partitions as needed. Adds a Limine EFI entry using `guid(<PARTUUID>):/` paths so it works at UEFI boot time regardless of mount state.
 
 ### `status`
 
@@ -142,12 +142,12 @@ The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after Limine-r
 
 **Why config enrollment is required:** Limine now protects Secure Boot systems by embedding the checksum of `limine.conf` into the Limine EFI binary. Any time `limine.conf` changes, the checksum must be re-enrolled with `limine-enroll-config`.
 
-### Windows Chainload Entry
+### Windows EFI Entry
 
 For dual-boot setups where Windows has its own EFI System Partition, the `windows` command:
 1. Scans all EFI System Partitions via `lsblk`/`blkid`
 2. Temporarily mounts partitions to verify `bootmgfw.efi`
-3. Adds a `guid(<PARTUUID>):/` chainload entry to `limine.conf` with `comment: Windows Boot Manager` for the boot menu description
+3. Adds a `guid(<PARTUUID>):/` EFI entry to `limine.conf` with `comment: Windows Boot Manager` for the boot menu description
 
 The PARTUUID path lets Limine's UEFI environment access the Windows ESP directly, without requiring it to be mounted in Linux.
 
@@ -233,7 +233,7 @@ sudo omarchy-secureboot sign
 
 This tool handles the parts of Secure Boot that nothing else automates:
 
-- **One-time setup**: Key creation, Limine enrollment settings, initial signing, key enrollment, Windows chainload entry
+- **One-time setup**: Key creation, Limine enrollment settings, initial signing, key enrollment, Windows EFI entry
 - **Ongoing gap**: Re-enrolling changed Limine configs and signing new EFI files (snapshots) that `zz-sbctl.hook` misses
 
 It deliberately delegates everything else:
