@@ -11,27 +11,47 @@ discover_efi_files() {
     2>/dev/null | sort
 }
 
+# Resolve the sbctl file database path, honoring local overrides.
+resolve_sbctl_files_db() {
+  local config="/etc/sbctl/sbctl.conf"
+  local files_db=""
+
+  if [[ -f "$config" ]]; then
+    files_db=$(awk -F': ' '/^[[:space:]]*files_db:[[:space:]]*/ {print $2; exit}' "$config" 2>/dev/null)
+  fi
+
+  if [[ -n "$files_db" && -f "$files_db" ]]; then
+    printf '%s\n' "$files_db"
+    return 0
+  fi
+
+  if [[ -f /var/lib/sbctl/files.json ]]; then
+    printf '%s\n' "/var/lib/sbctl/files.json"
+    return 0
+  fi
+
+  if [[ -f /var/lib/sbctl/files.db ]]; then
+    printf '%s\n' "/var/lib/sbctl/files.db"
+    return 0
+  fi
+
+  return 1
+}
+
 # List file paths currently registered in sbctl's database.
 list_enrolled_entries() {
-  local json
-  json=$(sbctl list-files --json 2>/dev/null) || return 0
+  local files_db json
+  files_db=$(resolve_sbctl_files_db) || return 0
+  json=$(<"$files_db") || return 0
 
   if [[ "$json" == "null" || -z "$json" ]]; then
     return 0
   fi
 
-  # sbctl list-files --json has changed shape across releases. Normalize it to
-  # tab-separated "file<TAB>output_file" rows for downstream callers.
+  # sbctl stores signing entries as a JSON object keyed by source file path.
+  # Normalize it to tab-separated "file<TAB>output_file" rows.
   echo "$json" | jq -r '
-    def rows:
-      if type == "array" then .
-      elif type == "object" and (has("file") or has("output_file")) then [.] 
-      elif type == "object" and has("files") then .files
-      elif type == "object" and ([keys[] | startswith("/")] | all) then [.[]]
-      else []
-      end;
-
-    rows[]
+    if type == "object" then .[] else [] end
     | select((.file // .output_file // "") != "")
     | [(.file // .output_file), (.output_file // .file)]
     | @tsv
