@@ -67,7 +67,7 @@ show_status() {
 
   # Windows entry
   if grep -q "# omarchy-secureboot:windows" "$LIMINE_CONF" 2>/dev/null; then
-    pass "Windows chainload entry in limine.conf"
+    pass "Windows EFI entry in limine.conf"
   else
     echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add)${NC}"
   fi

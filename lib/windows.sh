@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy-secureboot: Windows dual-boot detection and Limine chainload entry
+# omarchy-secureboot: Windows dual-boot detection and Limine EFI entry
 
 readonly WINDOWS_ENTRY_MARKER="# omarchy-secureboot:windows"
 readonly BOOTMGFW_REL="EFI/Microsoft/Boot/bootmgfw.efi"
@@ -75,7 +75,7 @@ EOF
   fi
 }
 
-# Add a Windows chainload entry to limine.conf (interactive).
+# Add a Windows EFI entry to limine.conf (interactive).
 add_windows_entry() {
   header "Windows Dual-Boot"
 
