@@ -72,11 +72,11 @@ show_status() {
     echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add)${NC}"
   fi
 
-  # Enrolled files (root only)
+  # Tracked files (root only)
   local all_ok=true
   if [[ $EUID -eq 0 ]]; then
     echo
-    echo -e "  ${BOLD}Enrolled Files${NC}"
+    echo -e "  ${BOLD}Tracked Files${NC}"
     local -a enrolled
     mapfile -t enrolled < <(list_enrolled_paths)
     if [[ ${#enrolled[@]} -eq 0 ]]; then

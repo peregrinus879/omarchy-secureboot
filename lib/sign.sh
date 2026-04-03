@@ -47,9 +47,8 @@ ensure_limine_secure_boot_settings() {
   return 1
 }
 
-# Compatibility shim for older call sites.
 # Returns 0 if Limine settings changed, 1 otherwise.
-disable_limine_verification() {
+apply_limine_secure_boot_settings() {
   ensure_limine_secure_boot_settings
 }
 
