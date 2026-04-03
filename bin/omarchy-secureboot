@@ -26,7 +26,7 @@ cmd_setup() {
 
   create_keys
 
-  disable_limine_verification || true
+  apply_limine_secure_boot_settings || true
   refresh_limine_config || die "Could not regenerate Limine config"
 
   clean_stale_entries
@@ -71,7 +71,7 @@ cmd_sign() {
   check_deps
   check_root "sign"
   qheader "Signing EFI Files"
-  disable_limine_verification || true
+  apply_limine_secure_boot_settings || true
   refresh_limine_config || die "Could not regenerate Limine config"
   clean_stale_entries
   local sign_rc=0
