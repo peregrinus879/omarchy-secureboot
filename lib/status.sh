@@ -49,6 +49,22 @@ show_status() {
     warn "zzz-omarchy-secureboot.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
   fi
 
+  echo
+  echo -e "  ${BOLD}Limine Config${NC}"
+  if [[ -f /etc/default/limine ]]; then
+    grep -qx 'ENABLE_ENROLL_LIMINE_CONFIG=yes' /etc/default/limine 2>/dev/null \
+      && pass "ENABLE_ENROLL_LIMINE_CONFIG=yes" \
+      || fail "ENABLE_ENROLL_LIMINE_CONFIG is missing"
+    grep -qx 'COMMANDS_BEFORE_SAVE="limine-reset-enroll"' /etc/default/limine 2>/dev/null \
+      && pass "COMMANDS_BEFORE_SAVE resets enrollment" \
+      || fail "COMMANDS_BEFORE_SAVE is missing limine-reset-enroll"
+    grep -qx 'COMMANDS_AFTER_SAVE="limine-enroll-config"' /etc/default/limine 2>/dev/null \
+      && pass "COMMANDS_AFTER_SAVE re-enrolls config" \
+      || fail "COMMANDS_AFTER_SAVE is missing limine-enroll-config"
+  else
+    fail "/etc/default/limine not found"
+  fi
+
   # Windows entry
   if grep -q "# omarchy-secureboot:windows" "$LIMINE_CONF" 2>/dev/null; then
     pass "Windows chainload entry in limine.conf"

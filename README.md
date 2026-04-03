@@ -2,7 +2,7 @@
 
 **Secure Boot setup for [Omarchy](https://omarchy.com) with Windows dual-boot support.**
 
-Creates signing keys, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu. After setup, sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files and a companion hook (`zzz-omarchy-secureboot.hook`) catches new ones (e.g., snapshot UKIs).
+Creates signing keys, configures Limine for Secure Boot config enrollment, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu. After setup, sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files and a companion hook (`zzz-omarchy-secureboot.hook`) keeps Limine config enrollment and newly created EFI files in sync.
 
 ## Table of Contents
 
@@ -83,7 +83,7 @@ Done. Hooks handle re-signing automatically after every pacman transaction.
 
 ### `setup`
 
-Creates signing keys (or skips if they exist), disables Limine's Blake2b hash verification (incompatible with Secure Boot signing), regenerates boot entries, cleans stale sbctl database entries, discovers all EFI files on the ESP, and signs them with `-s` (registering in sbctl's database).
+Creates signing keys (or skips if they exist), enables Limine config enrollment for Secure Boot, regenerates boot entries, refreshes snapshot entries, cleans stale sbctl database entries, signs EFI files on the ESP with `-s` (registering them in sbctl's database), and enrolls the current `limine.conf` checksum into the Limine EFI binary.
 
 ### `enroll`
 
@@ -101,7 +101,7 @@ Shows Secure Boot state, hook status, Windows entry, and enrolled file verificat
 
 ### `sign`
 
-Re-discovers and re-signs all EFI files. Also ensures hash verification stays disabled (self-healing against package updates that may reset `/etc/default/limine`), strips any stale Blake2b hashes, and restores/upgrades the Windows entry. Used manually or by the pacman hook.
+Repairs Secure Boot state after updates by enforcing Limine enrollment settings in `/etc/default/limine`, regenerating boot entries, refreshing snapshot entries, re-signing EFI files, restoring/upgrading the Windows entry, and re-enrolling the current `limine.conf` checksum. Used manually or by the pacman hook.
 
 ### `help`
 
@@ -134,13 +134,13 @@ Two hooks work together after pacman transactions:
 | Hook | Trigger | Purpose |
 |---|---|---|
 | `zz-sbctl.hook` (sbctl built-in) | All packages | Re-signs files already in sbctl's database |
-| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Discovers and signs NEW EFI files; strips stale hashes; restores Windows entry if wiped |
+| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Refreshes Limine config, re-enrolls its checksum, discovers/signs new EFI files, restores Windows entry if wiped |
 
-The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after limine-snapper-sync creates snapshot entries.
+The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after Limine-related tools have created or updated boot entries.
 
-**Why this matters:** With Secure Boot enabled, the UEFI firmware verifies ALL EFI binaries it loads, including snapshot UKIs. An unsigned snapshot will fail to boot, not just warn.
+**Why this matters:** With Secure Boot enabled on Limine 11.2.0+, Limine expects an enrolled checksum for `limine.conf`. Separately, the UEFI firmware verifies ALL EFI binaries it loads, including snapshot UKIs. For this repo's Omarchy UKI and Windows EFI flow, keeping EFI files signed and the Limine config checksum enrolled is the critical requirement.
 
-**Why hash verification is disabled:** Signing an EFI file changes its content, which invalidates the pre-computed Blake2b hash in `limine.conf`. With hashes enabled, Limine detects the mismatch and displays a boot warning requiring manual confirmation (press Y). Disabling Limine's hash verification avoids this. It is safe because UEFI firmware signature verification, which is strictly stronger, supersedes it.
+**Why config enrollment is required:** Limine now protects Secure Boot systems by embedding the checksum of `limine.conf` into the Limine EFI binary. Any time `limine.conf` changes, the checksum must be re-enrolled with `limine-enroll-config`.
 
 ### Windows Chainload Entry
 
@@ -160,18 +160,18 @@ The ongoing maintenance chain:
 ```
 Kernel update
   -> mkinitcpio builds UKI
-  -> limine-entry-tool updates limine.conf (hash-free, verification disabled)
+  -> limine-entry-tool updates limine.conf
   -> zz-sbctl.hook re-signs UKI (already in database)
-  -> zzz-omarchy-secureboot.hook signs new files, strips stale hashes
+  -> zzz-omarchy-secureboot.hook refreshes config enrollment and signs new files
 
 Snapshot creation
-  -> limine-snapper-sync copies UKI to snapshot location
-  -> zzz-omarchy-secureboot.hook signs new snapshot UKI, strips stale hashes
+  -> limine-snapper-sync copies UKI to snapshot location and rewrites snapshot entries
+  -> zzz-omarchy-secureboot.hook re-enrolls config and signs new snapshot UKIs
 
 Bootloader update
   -> Limine hook copies fresh bootloader files
   -> zz-sbctl.hook re-signs bootloader files
-  -> zzz-omarchy-secureboot.hook signs new files, strips stale hashes
+  -> zzz-omarchy-secureboot.hook refreshes config enrollment and signs new files
 ```
 
 ## Troubleshooting
@@ -202,7 +202,7 @@ Boot into BIOS, temporarily disable Secure Boot, boot into Linux, then:
 
 ```bash
 sudo omarchy-secureboot status    # Check what's unsigned
-sudo omarchy-secureboot sign      # Re-sign everything
+sudo omarchy-secureboot sign      # Rebuild Limine config, re-enroll it, and re-sign EFI files
 ```
 
 Re-enable Secure Boot after confirming all files verify.
@@ -211,15 +211,15 @@ Re-enable Secure Boot after confirming all files verify.
 
 Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs. The pacman hook should handle this automatically; if it didn't, check that the hook file exists at `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`.
 
-### Limine shows hash mismatch warning on boot
+### Limine panics about config checksum enrollment
 
-A package update may have re-enabled hash verification in `/etc/default/limine`. Run:
+This means Limine's Secure Boot config enrollment drifted out of sync after an update. Boot once with Secure Boot disabled, then run:
 
 ```bash
 sudo omarchy-secureboot sign
 ```
 
-This re-disables verification and strips stale hashes from `limine.conf`. The pacman hook does this automatically on relevant package updates.
+This restores the required `/etc/default/limine` settings, refreshes Limine-managed entries, and re-enrolls the current config checksum. The pacman hook does this automatically on relevant package updates.
 
 ### Windows disappeared from Limine boot menu
 
@@ -233,8 +233,8 @@ sudo omarchy-secureboot sign
 
 This tool handles the parts of Secure Boot that nothing else automates:
 
-- **One-time setup**: Key creation, hash verification disabled, initial signing, key enrollment, Windows chainload entry
-- **Ongoing gap**: Discovering and signing new EFI files (snapshots) that `zz-sbctl.hook` misses
+- **One-time setup**: Key creation, Limine enrollment settings, initial signing, key enrollment, Windows chainload entry
+- **Ongoing gap**: Re-enrolling changed Limine configs and signing new EFI files (snapshots) that `zz-sbctl.hook` misses
 
 It deliberately delegates everything else:
 

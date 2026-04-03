@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# omarchy-secureboot — Secure Boot setup for Omarchy with Windows dual-boot support.
-# Ongoing re-signing handled by zz-sbctl.hook + zzz-omarchy-secureboot.hook.
+# omarchy-secureboot - Secure Boot setup for Omarchy with Windows dual-boot support.
+# Ongoing maintenance handled by zz-sbctl.hook + zzz-omarchy-secureboot.hook.
 
 # Resolve lib directory (handles symlinks from /usr/local/bin -> /usr/local/lib)
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -26,17 +26,8 @@ cmd_setup() {
 
   create_keys
 
-  # Disable Limine hash verification; regenerate entries without hashes.
-  # limine-update rebuilds UKIs (unsigned) so sign_all_efi re-signs them below.
-  local need_limine_update=false
-  if disable_limine_verification; then
-    need_limine_update=true
-  fi
-  if $need_limine_update && command -v limine-update >/dev/null 2>&1; then
-    act "Regenerating boot entries without hashes"
-    limine-update
-  fi
-  strip_limine_hashes
+  disable_limine_verification || true
+  refresh_limine_config || die "Could not regenerate Limine config"
 
   clean_stale_entries
 
@@ -47,6 +38,7 @@ cmd_setup() {
 
   restore_windows_entry || true
   upgrade_windows_entry || true
+  enroll_limine_config || die "Could not enroll Limine config checksum"
 
   echo
   echo -e "  ${BOLD}Next steps${NC}"
@@ -80,12 +72,13 @@ cmd_sign() {
   check_root "sign"
   qheader "Signing EFI Files"
   disable_limine_verification || true
+  refresh_limine_config || die "Could not regenerate Limine config"
   clean_stale_entries
   local sign_rc=0
   sign_all_efi || sign_rc=$?
-  strip_limine_hashes
   restore_windows_entry || true
   upgrade_windows_entry || true
+  enroll_limine_config || die "Could not enroll Limine config checksum"
   return $sign_rc
 }
 
@@ -102,11 +95,11 @@ cmd_help() {
   echo -e "  ${BOLD}Usage${NC}   sudo omarchy-secureboot <command>"
   echo
   echo -e "  ${BOLD}Commands${NC}"
-  echo "    setup       Create signing keys and sign all EFI files"
+  echo "    setup       Configure Limine Secure Boot state and sign EFI files"
   echo "    enroll      Enroll keys into firmware (requires Setup Mode)"
-  echo "    windows     Add Windows to Limine boot menu (separate SSD)"
+  echo "    windows     Add a Windows EFI entry and enroll the config"
   echo "    status      Show Secure Boot status and file verification"
-  echo "    sign        Re-discover and re-sign all EFI files"
+  echo "    sign        Refresh Limine config, enroll it, and sign EFI files"
   echo "    help        Show this help"
   echo "    version     Show version"
   echo

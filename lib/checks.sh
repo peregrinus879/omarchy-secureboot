@@ -14,6 +14,12 @@ check_core_deps() {
 
 check_deps() {
   check_core_deps
+  command -v limine-update >/dev/null 2>&1 \
+    || die "limine-update not installed. Install: ${BOLD}limine-mkinitcpio-hook${NC}"
+  command -v limine-enroll-config >/dev/null 2>&1 \
+    || die "limine-enroll-config not installed. Update: ${BOLD}limine-mkinitcpio-hook${NC}"
+  command -v limine-reset-enroll >/dev/null 2>&1 \
+    || die "limine-reset-enroll not installed. Update: ${BOLD}limine-mkinitcpio-hook${NC}"
   [[ -d "${ESP}/EFI" ]] \
     || die "${ESP}/EFI not found. Is the EFI partition mounted?"
 }

@@ -58,7 +58,7 @@ get_partuuid() {
   blkid -s PARTUUID -o value "$1" 2>/dev/null
 }
 
-# Write the chainload entry block to limine.conf for a given PARTUUID.
+# Write the Windows entry block to limine.conf for a given PARTUUID.
 write_windows_entry() {
   local partuuid="$1"
   if ! cat >> "$LIMINE_CONF" <<EOF
@@ -66,8 +66,8 @@ write_windows_entry() {
 ${WINDOWS_ENTRY_MARKER}
 /Windows
     comment: Windows Boot Manager
-    protocol: efi_chainload
-    image_path: guid(${partuuid}):/${BOOTMGFW_REL}
+    protocol: efi
+    path: guid(${partuuid}):/${BOOTMGFW_REL}
 EOF
   then
     fail "Failed to write Windows entry to ${LIMINE_CONF}"
@@ -115,6 +115,7 @@ add_windows_entry() {
   fi
 
   write_windows_entry "$partuuid" || return 1
+  enroll_limine_config || return 1
   mkdir -p "$STATE_DIR"
   touch "${STATE_DIR}/windows-enabled"
   pass "Windows entry added to limine.conf"
@@ -127,16 +128,23 @@ add_windows_entry() {
 upgrade_windows_entry() {
   [[ -f "$LIMINE_CONF" ]] || return 0
   grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" || return 0
-  grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q 'comment:' && return 0
 
-  local partuuid
-  partuuid=$(grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" \
-    | grep 'image_path:' | sed 's/.*guid(\([^)]*\)).*/\1/')
-  [[ -z "$partuuid" ]] && return 0
+  if grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "protocol: efi" \
+    && grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "path: guid(" \
+    && ! grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q 'image_path:'; then
+    return 0
+  fi
+
+  local win_dev partuuid
+  win_dev=$(find_windows_esp) || return 0
+  [[ -n "$win_dev" ]] || return 0
+
+  partuuid=$(get_partuuid "$win_dev") || return 0
+  [[ -n "$partuuid" ]] || return 0
 
   sed -i "/${WINDOWS_ENTRY_MARKER}/,\$d" "$LIMINE_CONF"
   write_windows_entry "$partuuid"
-  qact "Upgraded Windows entry with description"
+  qact "Upgraded Windows entry for Secure Boot"
 }
 
 # Restore the Windows entry if it was wiped (e.g., by omarchy-refresh-limine).
