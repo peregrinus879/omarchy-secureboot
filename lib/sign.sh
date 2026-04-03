@@ -105,11 +105,12 @@ create_keys() {
 clean_stale_entries() {
   local -a removable
   mapfile -t removable < <(
-    list_enrolled_paths | while IFS= read -r path; do
-      if [[ ! -e "$path" || "$path" == */Microsoft/* || "$path" == *BOOTIA32.EFI ]]; then
-        echo "$path"
+    list_enrolled_entries | while IFS=$'\t' read -r file output; do
+      output="${output:-$file}"
+      if [[ ! -e "$file" || ! -e "$output" || "$file" == */Microsoft/* || "$output" == */Microsoft/* || "$file" == *BOOTIA32.EFI || "$output" == *BOOTIA32.EFI ]]; then
+        printf '%s\n' "$file"
       fi
-    done
+    done | sort -u
   )
   [[ ${#removable[@]} -eq 0 ]] && return 0
 
