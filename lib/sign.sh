@@ -207,16 +207,25 @@ clean_stale_entries() {
 # Uses -s flag to register files in sbctl's database for zz-sbctl.hook.
 sign_all_efi() {
   local -a efi_files
+  local -a enrolled
   mapfile -t efi_files < <(discover_efi_files)
+  mapfile -t enrolled < <(list_enrolled_paths)
   [[ ${#efi_files[@]} -eq 0 ]] && die "No EFI files found in ${ESP}"
 
+  local -A enrolled_map=()
   local signed=0 skipped=0 failed=0
   local file is_signed
+
+  for file in "${enrolled[@]}"; do
+    enrolled_map["$file"]=1
+  done
+
   for file in "${efi_files[@]}"; do
     # sbctl verify exits 0 regardless of result; parse JSON for actual status
     is_signed=$(sbctl verify --json "$file" 2>/dev/null \
       | jq -r '.[0].is_signed // empty') || true
-    if [[ "$is_signed" == "1" ]]; then
+
+    if [[ "$is_signed" == "1" && -n "${enrolled_map[$file]:-}" ]]; then
       qpass "${file#"${ESP}"/} ${DIM}already signed${NC}"
       skipped=$((skipped + 1))
     else
@@ -227,7 +236,12 @@ sign_all_efi() {
         sbctl sign -s "$file" || _sign_rc=$?
       fi
       if [[ $_sign_rc -eq 0 ]]; then
-        qact "${file#"${ESP}"/} ${DIM}signed${NC}"
+        if [[ "$is_signed" == "1" ]]; then
+          qact "${file#"${ESP}"/} ${DIM}registered${NC}"
+        else
+          qact "${file#"${ESP}"/} ${DIM}signed${NC}"
+        fi
+        enrolled_map["$file"]=1
         signed=$((signed + 1))
       else
         warn "Failed to sign: ${file#"${ESP}"/}"
