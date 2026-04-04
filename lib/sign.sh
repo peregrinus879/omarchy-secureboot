@@ -3,8 +3,8 @@
 
 readonly LIMINE_DEFAULT_CONF="/etc/default/limine"
 
-# Set or replace a simple key="value" entry in /etc/default/limine.
-# Returns 0 if the file changed, 1 if it was already correct.
+# Set or replace a simple key=value entry in /etc/default/limine.
+# Returns 0 if the file changed, 1 if it was already correct, 2 on failure.
 set_limine_default_value() {
   local key="$1" value="$2"
   local desired="${key}=${value}"
@@ -12,42 +12,120 @@ set_limine_default_value() {
   grep -qxF "$desired" "$LIMINE_DEFAULT_CONF" 2>/dev/null && return 1
 
   if grep -q "^${key}=" "$LIMINE_DEFAULT_CONF" 2>/dev/null; then
-    sed -i "s|^${key}=.*|${desired}|" "$LIMINE_DEFAULT_CONF"
+    local escaped
+    escaped=$(printf '%s' "$desired" | sed 's/[&|]/\\&/g') || return 2
+    sed -i "s|^${key}=.*|${escaped}|" "$LIMINE_DEFAULT_CONF" || return 2
   else
-    printf '%s\n' "$desired" >> "$LIMINE_DEFAULT_CONF"
+    printf '%s\n' "$desired" >> "$LIMINE_DEFAULT_CONF" || return 2
   fi
   return 0
 }
 
-# Ensure Limine is configured for Secure Boot on Limine 11.2.0+.
-# Returns 0 if settings changed, 1 if already correct or config not found.
+# Ensure a space-delimited command is present in COMMANDS_* without
+# overwriting other upstream-managed commands.
+# Returns 0 if the file changed, 1 if already correct, 2 on failure.
+ensure_limine_default_command() {
+  local key="$1" command="$2"
+  local raw current desired escaped
+
+  raw=$(grep -m1 "^${key}=" "$LIMINE_DEFAULT_CONF" 2>/dev/null | cut -d= -f2- || true)
+
+  if [[ -z "$raw" ]]; then
+    printf '%s="%s"\n' "$key" "$command" >> "$LIMINE_DEFAULT_CONF" || return 2
+    return 0
+  fi
+
+  current="$raw"
+  if [[ "$current" == \"*\" && "$current" == *\" ]]; then
+    current=${current:1:${#current}-2}
+  fi
+
+  [[ " $current " == *" $command "* ]] && return 1
+
+  if [[ -n "$current" ]]; then
+    desired="${key}=\"${current} ${command}\""
+  else
+    desired="${key}=\"${command}\""
+  fi
+
+  escaped=$(printf '%s' "$desired" | sed 's/[&|]/\\&/g') || return 2
+  sed -i "s|^${key}=.*|${escaped}|" "$LIMINE_DEFAULT_CONF" || return 2
+  return 0
+}
+
+# Ensure Limine is configured for the current Omarchy Secure Boot model:
+# signed EFI binaries, enrolled limine.conf checksum, and disabled Limine
+# path verification so stale path hashes do not block boot after signing.
 ensure_limine_secure_boot_settings() {
-  [[ -f "$LIMINE_DEFAULT_CONF" ]] || return 1
+  [[ -f "$LIMINE_DEFAULT_CONF" ]] || {
+    fail "${LIMINE_DEFAULT_CONF} not found"
+    return 1
+  }
 
+  local backup
   local changed=1
+  local rc
 
-  if set_limine_default_value "ENABLE_ENROLL_LIMINE_CONFIG" "yes"; then
+  backup=$(backup_file "$LIMINE_DEFAULT_CONF") || {
+    fail "Could not back up ${LIMINE_DEFAULT_CONF}"
+    return 1
+  }
+
+  set_limine_default_value "ENABLE_VERIFICATION" "no"
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
     changed=0
+  elif [[ $rc -ne 1 ]]; then
+    restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+    discard_file_backup "$backup"
+    fail "Could not update ENABLE_VERIFICATION in ${LIMINE_DEFAULT_CONF}"
+    return 1
   fi
 
-  if set_limine_default_value "COMMANDS_BEFORE_SAVE" '"limine-reset-enroll"'; then
+  set_limine_default_value "ENABLE_ENROLL_LIMINE_CONFIG" "yes"
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
     changed=0
+  elif [[ $rc -ne 1 ]]; then
+    restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+    discard_file_backup "$backup"
+    fail "Could not update ENABLE_ENROLL_LIMINE_CONFIG in ${LIMINE_DEFAULT_CONF}"
+    return 1
   fi
 
-  if set_limine_default_value "COMMANDS_AFTER_SAVE" '"limine-enroll-config"'; then
+  ensure_limine_default_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll"
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
     changed=0
+  elif [[ $rc -ne 1 ]]; then
+    restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+    discard_file_backup "$backup"
+    fail "Could not update COMMANDS_BEFORE_SAVE in ${LIMINE_DEFAULT_CONF}"
+    return 1
   fi
+
+  ensure_limine_default_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"
+  rc=$?
+  if [[ $rc -eq 0 ]]; then
+    changed=0
+  elif [[ $rc -ne 1 ]]; then
+    restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+    discard_file_backup "$backup"
+    fail "Could not update COMMANDS_AFTER_SAVE in ${LIMINE_DEFAULT_CONF}"
+    return 1
+  fi
+
+  discard_file_backup "$backup"
 
   if [[ $changed -eq 0 ]]; then
-    qact "Updated Limine Secure Boot settings for config enrollment"
+    qact "Updated Limine Secure Boot settings"
     return 0
   fi
 
   qpass "Limine Secure Boot settings already configured"
-  return 1
+  return 0
 }
 
-# Returns 0 if Limine settings changed, 1 otherwise.
 apply_limine_secure_boot_settings() {
   ensure_limine_secure_boot_settings
 }
@@ -72,9 +150,10 @@ enroll_limine_config() {
 }
 
 # Compatibility shim for older call sites.
-# This repo no longer mutates Limine path hashes.
+# Limine path verification stays disabled via ENABLE_VERIFICATION=no, so this
+# repo does not maintain Limine #hash suffixes in path: lines.
 strip_limine_hashes() {
-  qpass "Limine path handling left to Limine tooling"
+  qpass "Limine path verification intentionally disabled"
   return 1
 }
 
@@ -117,9 +196,9 @@ clean_stale_entries() {
   local file
   for file in "${removable[@]}"; do
     if sbctl remove-file "$file" >/dev/null 2>&1; then
-      qpass "${file#${ESP}/}"
+      qpass "${file#"${ESP}"/}"
     else
-      warn "Could not remove: ${file#${ESP}/}"
+      warn "Could not remove: ${file#"${ESP}"/}"
     fi
   done
 }
@@ -138,7 +217,7 @@ sign_all_efi() {
     is_signed=$(sbctl verify --json "$file" 2>/dev/null \
       | jq -r '.[0].is_signed // empty') || true
     if [[ "$is_signed" == "1" ]]; then
-      qpass "${file#${ESP}/} ${DIM}already signed${NC}"
+      qpass "${file#"${ESP}"/} ${DIM}already signed${NC}"
       skipped=$((skipped + 1))
     else
       local _sign_rc=0
@@ -148,10 +227,10 @@ sign_all_efi() {
         sbctl sign -s "$file" || _sign_rc=$?
       fi
       if [[ $_sign_rc -eq 0 ]]; then
-        qact "${file#${ESP}/} ${DIM}signed${NC}"
+        qact "${file#"${ESP}"/} ${DIM}signed${NC}"
         signed=$((signed + 1))
       else
-        warn "Failed to sign: ${file#${ESP}/}"
+        warn "Failed to sign: ${file#"${ESP}"/}"
         failed=$((failed + 1))
       fi
     fi
