@@ -25,21 +25,66 @@ resolve_sbctl_files_db() {
     return 0
   fi
 
-  if [[ -f /var/lib/sbctl/files.json ]]; then
-    printf '%s\n' "/var/lib/sbctl/files.json"
+  if [[ -f /var/lib/sbctl/files.db ]]; then
+    printf '%s\n' "/var/lib/sbctl/files.db"
     return 0
   fi
 
-  if [[ -f /var/lib/sbctl/files.db ]]; then
-    printf '%s\n' "/var/lib/sbctl/files.db"
+  if [[ -f /var/lib/sbctl/files.json ]]; then
+    printf '%s\n' "/var/lib/sbctl/files.json"
     return 0
   fi
 
   return 1
 }
 
+# Query tracked files through sbctl's public CLI.
+list_enrolled_entries_from_cli() {
+  command -v sbctl >/dev/null 2>&1 || return 1
+
+  local json
+  json=$(sbctl list-files --json 2>/dev/null) || return 1
+  [[ -n "$json" && "$json" != "null" ]] || return 1
+
+  echo "$json" | jq -r '
+    def row($file; $output):
+      select(($file // "") != "")
+      | [($file), ($output // $file)]
+      | @tsv;
+
+    if type == "array" then
+      .[]
+      | if type == "object" then
+          row((.file // .path // .source // ""); (.output_file // .output // .file // .path // .source // ""))
+        elif type == "string" then
+          row(.; .)
+        else
+          empty
+        end
+    elif type == "object" then
+      to_entries[]
+      | if (.value | type) == "object" then
+          row((.value.file // .key); (.value.output_file // .value.output // .value.file // .key))
+        elif (.value | type) == "string" then
+          row(.key; .value)
+        else
+          row(.key; .key)
+        end
+    else
+      empty
+    end
+  ' 2>/dev/null
+}
+
 # List file paths currently registered in sbctl's database.
 list_enrolled_entries() {
+  local cli_entries
+  cli_entries=$(list_enrolled_entries_from_cli) || cli_entries=""
+  if [[ -n "$cli_entries" ]]; then
+    printf '%s\n' "$cli_entries"
+    return 0
+  fi
+
   local files_db json
   files_db=$(resolve_sbctl_files_db) || return 0
   json=$(<"$files_db") || return 0
