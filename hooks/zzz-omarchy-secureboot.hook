@@ -1,6 +1,6 @@
 # Omarchy Secure Boot: refresh Limine config, enroll it, and sign EFI files.
-# Runs after zz-sbctl.hook and Limine-related updates.
-# zz-sbctl.hook re-signs known files; this hook repairs config enrollment and catches new EFI files.
+# Runs after zz-sbctl.hook and Limine-related package updates.
+# zz-sbctl.hook re-signs known files; this hook repairs pacman-triggered drift and catches new EFI files.
 
 [Trigger]
 Operation = Install

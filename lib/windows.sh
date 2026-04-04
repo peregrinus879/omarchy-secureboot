@@ -9,14 +9,14 @@ readonly BOOTMGFW_REL="EFI/Microsoft/Boot/bootmgfw.efi"
 find_windows_esp() {
   local dev mountpoint tmpdir="" found=""
 
-  # Clean up temporary mount on interruption or exit
-  _fwe_cleanup() {
+  # Clean up temporary mount on interruption or exit.
+  cleanup_windows_mount() {
     [[ -z "$tmpdir" ]] && return
     umount "$tmpdir" 2>/dev/null || true
     rmdir "$tmpdir" 2>/dev/null || true
     tmpdir=""
   }
-  trap _fwe_cleanup EXIT
+  trap cleanup_windows_mount EXIT
 
   # Check partitions typed as EFI System Partition (C12A7328-...)
   while IFS= read -r dev; do
@@ -27,6 +27,7 @@ find_windows_esp() {
     if [[ -n "$mountpoint" ]]; then
       if [[ -f "${mountpoint}/${BOOTMGFW_REL}" ]]; then
         trap - EXIT
+        cleanup_windows_mount
         echo "$dev"
         return 0
       fi
@@ -44,12 +45,18 @@ find_windows_esp() {
     rmdir "$tmpdir" 2>/dev/null
     tmpdir=""
 
-    [[ -n "$found" ]] && { trap - EXIT; echo "$found"; return 0; }
+    if [[ -n "$found" ]]; then
+      trap - EXIT
+      cleanup_windows_mount
+      echo "$found"
+      return 0
+    fi
   done < <(lsblk -nrpo NAME,PARTTYPE 2>/dev/null \
     | grep -i "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" \
     | awk '{print $1}')
 
   trap - EXIT
+  cleanup_windows_mount
   return 1
 }
 
@@ -58,21 +65,79 @@ get_partuuid() {
   blkid -s PARTUUID -o value "$1" 2>/dev/null
 }
 
-# Write the Windows entry block to limine.conf for a given PARTUUID.
-write_windows_entry() {
+# Insert or replace the repo-managed Windows block in limine.conf.
+update_windows_entry_block() {
   local partuuid="$1"
-  if ! cat >> "$LIMINE_CONF" <<EOF
+  local backup tmp
 
-${WINDOWS_ENTRY_MARKER}
-/Windows
-    comment: Windows Boot Manager
-    protocol: efi
-    path: guid(${partuuid}):/${BOOTMGFW_REL}
-EOF
-  then
+  backup=$(backup_file "$LIMINE_CONF") || {
+    fail "Could not back up ${LIMINE_CONF}"
+    return 1
+  }
+
+  tmp=$(mktemp "/tmp/omarchy-secureboot.limine.conf.XXXXXX") || {
+    discard_file_backup "$backup"
+    fail "Could not create temporary file for ${LIMINE_CONF}"
+    return 1
+  }
+
+  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" -v rel="$BOOTMGFW_REL" -v partuuid="$partuuid" '
+    function print_block() {
+      print ""
+      print marker
+      print "/Windows"
+      print "    comment: Windows Boot Manager"
+      print "    protocol: efi"
+      print "    path: guid(" partuuid "):" "/" rel
+      inserted = 1
+    }
+
+    BEGIN {
+      in_block = 0
+      inserted = 0
+    }
+
+    $0 == marker {
+      if (!inserted) {
+        print_block()
+      }
+      in_block = 1
+      next
+    }
+
+    in_block {
+      if ($0 == "/Windows" || $0 ~ /^[[:space:]]+/ || $0 == "") {
+        next
+      }
+      in_block = 0
+    }
+
+    {
+      print
+    }
+
+    END {
+      if (!inserted) {
+        print_block()
+      }
+    }
+  ' "$LIMINE_CONF" > "$tmp"; then
+    rm -f "$tmp"
+    discard_file_backup "$backup"
     fail "Failed to write Windows entry to ${LIMINE_CONF}"
     return 1
   fi
+
+  if ! cp "$tmp" "$LIMINE_CONF"; then
+    restore_file_backup "$backup" "$LIMINE_CONF" || true
+    rm -f "$tmp"
+    discard_file_backup "$backup"
+    fail "Failed to update ${LIMINE_CONF}"
+    return 1
+  fi
+
+  rm -f "$tmp"
+  discard_file_backup "$backup"
 }
 
 # Add a Windows EFI entry to limine.conf (interactive).
@@ -114,7 +179,7 @@ add_windows_entry() {
     return 1
   fi
 
-  write_windows_entry "$partuuid" || return 1
+  update_windows_entry_block "$partuuid" || return 1
   enroll_limine_config || return 1
   mkdir -p "$STATE_DIR"
   touch "${STATE_DIR}/windows-enabled"
@@ -142,8 +207,7 @@ upgrade_windows_entry() {
   partuuid=$(get_partuuid "$win_dev") || return 0
   [[ -n "$partuuid" ]] || return 0
 
-  sed -i "/${WINDOWS_ENTRY_MARKER}/,\$d" "$LIMINE_CONF"
-  write_windows_entry "$partuuid"
+  update_windows_entry_block "$partuuid" || return 1
   qact "Upgraded Windows entry for Secure Boot"
 }
 
@@ -164,6 +228,6 @@ restore_windows_entry() {
   partuuid=$(get_partuuid "$win_dev") || return 0
   [[ -z "$partuuid" ]] && return 0
 
-  write_windows_entry "$partuuid" || return 1
+  update_windows_entry_block "$partuuid" || return 1
   qact "Restored Windows entry in limine.conf"
 }

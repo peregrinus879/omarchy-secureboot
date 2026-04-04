@@ -26,7 +26,7 @@ cmd_setup() {
 
   create_keys
 
-  apply_limine_secure_boot_settings || true
+  apply_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
   refresh_limine_config || die "Could not regenerate Limine config"
 
   clean_stale_entries
@@ -71,7 +71,7 @@ cmd_sign() {
   check_deps
   check_root "sign"
   qheader "Signing EFI Files"
-  apply_limine_secure_boot_settings || true
+  apply_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
   refresh_limine_config || die "Could not regenerate Limine config"
   clean_stale_entries
   local sign_rc=0
@@ -90,18 +90,21 @@ cmd_status() {
 cmd_help() {
   header "Secure Boot for Omarchy"
   echo "  Enable Secure Boot with Windows dual-boot support."
-  echo -e "  After setup, ${DIM}zz-sbctl.hook${NC} + ${DIM}zzz-omarchy-secureboot.hook${NC} handle re-signing."
+  echo -e "  After setup, ${DIM}zz-sbctl.hook${NC} + ${DIM}zzz-omarchy-secureboot.hook${NC} handle package-triggered maintenance."
   echo
   echo -e "  ${BOLD}Usage${NC}   sudo omarchy-secureboot <command>"
   echo
   echo -e "  ${BOLD}Commands${NC}"
-  echo "    setup       Configure Limine Secure Boot state and sign EFI files"
+  echo "    setup       Set Limine verification/enrollment state and sign EFI files"
   echo "    enroll      Enroll keys into firmware (requires Setup Mode)"
   echo "    windows     Add a Windows EFI entry and enroll the config"
   echo "    status      Show Secure Boot status and file verification"
-  echo "    sign        Refresh Limine config, enroll it, and sign EFI files"
+  echo "    sign        Reassert Limine settings, refresh config, and sign EFI files"
   echo "    help        Show this help"
   echo "    version     Show version"
+  echo
+  echo -e "  ${DIM}Note:${NC} This tool keeps ${BOLD}ENABLE_VERIFICATION=no${NC} while using Limine config enrollment."
+  echo -e "        Non-pacman snapshot changes may still require ${BOLD}sudo omarchy-secureboot sign${NC}."
   echo
   echo -e "  ${BOLD}Workflow${NC}"
   echo "    1. sudo omarchy-secureboot setup"
@@ -117,7 +120,7 @@ cmd_help() {
 # Parse global flags
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
-    --quiet) QUIET=true; shift ;;
+    --quiet) QUIET=true; export QUIET; shift ;;
     *)       break ;;
   esac
 done

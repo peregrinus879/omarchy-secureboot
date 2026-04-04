@@ -3,6 +3,7 @@
 
 show_status() {
   header "Secure Boot Status"
+  local all_ok=true
 
   # Parse sbctl status
   local json
@@ -25,8 +26,20 @@ show_status() {
       end
     ')
 
-    [[ "$installed" == "true" ]]   && pass "sbctl keys installed"     || fail "sbctl keys not installed"
-    [[ "$secure_boot" == "true" ]] && pass "Secure Boot enabled"      || fail "Secure Boot disabled"
+    if [[ "$installed" == "true" ]]; then
+      pass "sbctl keys installed"
+    else
+      fail "sbctl keys not installed"
+      all_ok=false
+    fi
+
+    if [[ "$secure_boot" == "true" ]]; then
+      pass "Secure Boot enabled"
+    else
+      fail "Secure Boot disabled"
+      all_ok=false
+    fi
+
     if [[ "$setup_mode" == "true" ]]; then
       warn "Setup Mode active"
     else
@@ -44,25 +57,68 @@ show_status() {
   fi
 
   if [[ -f /etc/pacman.d/hooks/zzz-omarchy-secureboot.hook ]]; then
-    pass "zzz-omarchy-secureboot.hook present (snapshot discovery)"
+    pass "zzz-omarchy-secureboot.hook present (package repair)"
   else
     warn "zzz-omarchy-secureboot.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    local load_state enabled_state active_state
+    load_state=$(systemctl show -p LoadState --value limine-snapper-sync.service 2>/dev/null || true)
+    if [[ "$load_state" == "loaded" ]]; then
+      enabled_state=$(systemctl is-enabled limine-snapper-sync.service 2>/dev/null || true)
+      active_state=$(systemctl is-active limine-snapper-sync.service 2>/dev/null || true)
+
+      if [[ "$enabled_state" == "enabled" ]]; then
+        pass "limine-snapper-sync.service enabled"
+      else
+        warn "limine-snapper-sync.service not enabled (${enabled_state:-unknown})"
+      fi
+
+      if [[ "$active_state" == "active" ]]; then
+        pass "limine-snapper-sync.service active"
+      else
+        warn "limine-snapper-sync.service not active (${active_state:-unknown})"
+        if ! command -v inotifywait >/dev/null 2>&1; then
+          echo -e "  ${DIM}Optional upstream watcher helper missing: ${BOLD}inotify-tools${NC}${DIM}. Manual ${BOLD}sign${NC}${DIM} still works.${NC}"
+        fi
+      fi
+    fi
   fi
 
   echo
   echo -e "  ${BOLD}Limine Config${NC}"
   if [[ -f /etc/default/limine ]]; then
-    grep -qx 'ENABLE_ENROLL_LIMINE_CONFIG=yes' /etc/default/limine 2>/dev/null \
-      && pass "ENABLE_ENROLL_LIMINE_CONFIG=yes" \
-      || fail "ENABLE_ENROLL_LIMINE_CONFIG is missing"
-    grep -qx 'COMMANDS_BEFORE_SAVE="limine-reset-enroll"' /etc/default/limine 2>/dev/null \
-      && pass "COMMANDS_BEFORE_SAVE resets enrollment" \
-      || fail "COMMANDS_BEFORE_SAVE is missing limine-reset-enroll"
-    grep -qx 'COMMANDS_AFTER_SAVE="limine-enroll-config"' /etc/default/limine 2>/dev/null \
-      && pass "COMMANDS_AFTER_SAVE re-enrolls config" \
-      || fail "COMMANDS_AFTER_SAVE is missing limine-enroll-config"
+    if grep -qx 'ENABLE_VERIFICATION=no' /etc/default/limine 2>/dev/null; then
+      pass "ENABLE_VERIFICATION=no"
+    else
+      fail "ENABLE_VERIFICATION is not set to no"
+      all_ok=false
+    fi
+
+    if grep -qx 'ENABLE_ENROLL_LIMINE_CONFIG=yes' /etc/default/limine 2>/dev/null; then
+      pass "ENABLE_ENROLL_LIMINE_CONFIG=yes"
+    else
+      fail "ENABLE_ENROLL_LIMINE_CONFIG is missing"
+      all_ok=false
+    fi
+
+    if grep -Eq '^COMMANDS_BEFORE_SAVE=.*(^|[[:space:]"])limine-reset-enroll([[:space:]"]|$)' /etc/default/limine 2>/dev/null; then
+      pass "COMMANDS_BEFORE_SAVE includes limine-reset-enroll"
+    else
+      fail "COMMANDS_BEFORE_SAVE is missing limine-reset-enroll"
+      all_ok=false
+    fi
+
+    if grep -Eq '^COMMANDS_AFTER_SAVE=.*(^|[[:space:]"])limine-enroll-config([[:space:]"]|$)' /etc/default/limine 2>/dev/null; then
+      pass "COMMANDS_AFTER_SAVE includes limine-enroll-config"
+    else
+      fail "COMMANDS_AFTER_SAVE is missing limine-enroll-config"
+      all_ok=false
+    fi
   else
     fail "/etc/default/limine not found"
+    all_ok=false
   fi
 
   # Windows entry
@@ -73,16 +129,32 @@ show_status() {
   fi
 
   # Tracked files (root only)
-  local all_ok=true
   if [[ $EUID -eq 0 ]]; then
     echo
     echo -e "  ${BOLD}Tracked Files${NC}"
     local -a enrolled
+    local -a discovered
+    local -a untracked=()
+    local file is_signed
+    declare -A enrolled_map=()
+
     mapfile -t enrolled < <(list_enrolled_paths)
+    mapfile -t discovered < <(discover_efi_files)
+
     if [[ ${#enrolled[@]} -eq 0 ]]; then
       warn "No files in sbctl database"
+      [[ ${#discovered[@]} -eq 0 ]] || all_ok=false
     else
-      local file is_signed
+      for file in "${enrolled[@]}"; do
+        enrolled_map["$file"]=1
+      done
+
+      for file in "${discovered[@]}"; do
+        if [[ -z "${enrolled_map[$file]:-}" ]]; then
+          untracked+=("$file")
+        fi
+      done
+
       for file in "${enrolled[@]}"; do
         # sbctl verify exits 0 regardless of result; parse JSON for actual status
         is_signed=$(sbctl verify --json "$file" 2>/dev/null \
@@ -94,9 +166,22 @@ show_status() {
           all_ok=false
         fi
       done
+
+      if [[ ${#untracked[@]} -gt 0 ]]; then
+        echo
+        warn "Untracked EFI files found (${#untracked[@]})"
+        for file in "${untracked[@]}"; do
+          echo -e "    ${YELLOW}!${NC} $file"
+        done
+        if printf '%s\n' "${untracked[@]}" | grep -q '\.efi_sha256_'; then
+          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. Run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} after non-pacman snapshot changes.${NC}"
+        fi
+        all_ok=false
+      fi
+
       echo
       if $all_ok; then
-        pass "All files signed and verified"
+        pass "All tracked files signed and all discovered EFI files enrolled"
       else
         warn "Some files failed. Run: ${BOLD}sudo omarchy-secureboot sign${NC}"
       fi
