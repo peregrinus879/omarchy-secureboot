@@ -12,7 +12,7 @@ discover_efi_files() {
 }
 
 # Resolve the sbctl file database path, honoring local overrides.
-resolve_sbctl_files_db() {
+resolve_sbctl_files_db_path() {
   local config="/etc/sbctl/sbctl.conf"
   local files_db=""
 
@@ -20,22 +20,29 @@ resolve_sbctl_files_db() {
     files_db=$(awk -F': ' '/^[[:space:]]*files_db:[[:space:]]*/ {print $2; exit}' "$config" 2>/dev/null)
   fi
 
-  if [[ -n "$files_db" && -f "$files_db" ]]; then
+  if [[ -n "$files_db" ]]; then
     printf '%s\n' "$files_db"
     return 0
   fi
 
-  if [[ -f /var/lib/sbctl/files.db ]]; then
+  if [[ -f /var/lib/sbctl/files.db || ! -e /var/lib/sbctl/files.json ]]; then
     printf '%s\n' "/var/lib/sbctl/files.db"
     return 0
   fi
 
-  if [[ -f /var/lib/sbctl/files.json ]]; then
+  if [[ -f /var/lib/sbctl/files.json || ! -e /var/lib/sbctl/files.db ]]; then
     printf '%s\n' "/var/lib/sbctl/files.json"
     return 0
   fi
 
   return 1
+}
+
+resolve_sbctl_files_db() {
+  local files_db
+  files_db=$(resolve_sbctl_files_db_path) || return 1
+  [[ -f "$files_db" ]] || return 1
+  printf '%s\n' "$files_db"
 }
 
 # Query tracked files through sbctl's public CLI.
