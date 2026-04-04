@@ -83,7 +83,7 @@ Done. Hooks handle package-triggered maintenance automatically after relevant pa
 
 ### `setup`
 
-Creates signing keys (or skips if they exist), enforces `ENABLE_VERIFICATION=no` plus Limine config enrollment settings, regenerates boot entries, refreshes snapshot entries, cleans stale sbctl database entries, signs EFI files on the ESP with `-s` (registering them in sbctl's database), and enrolls the current `limine.conf` checksum into the Limine EFI binary.
+Creates signing keys (or skips if they exist), enforces `ENABLE_VERIFICATION=no` plus Limine config enrollment settings, regenerates boot entries, refreshes snapshot entries, cleans stale sbctl database entries, signs EFI files on the ESP, ensures they are tracked by sbctl, and enrolls the current `limine.conf` checksum into the Limine EFI binary.
 
 ### `enroll`
 
@@ -101,7 +101,7 @@ Shows Secure Boot state, hook status, Windows entry, and enrolled file verificat
 
 ### `sign`
 
-Repairs Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, regenerating boot entries, refreshing snapshot entries, re-signing EFI files, restoring/upgrading the Windows entry, and re-enrolling the current `limine.conf` checksum. Used manually or by the pacman hook.
+Repairs Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, regenerating boot entries, refreshing snapshot entries, re-signing EFI files, ensuring new EFI files are tracked by sbctl, restoring/upgrading the Windows entry, and re-enrolling the current `limine.conf` checksum. Used manually or by the pacman hook.
 
 ### `help`
 
@@ -125,7 +125,18 @@ Finds all `.efi`/`.EFI` files under `/boot`, plus snapshot UKIs matching `*.efi_
 
 ### Signing and Database Registration
 
-Files are signed with `sbctl sign -s`, which both signs the file and registers it in sbctl's database. This is critical: `zz-sbctl.hook` only re-signs files in the database.
+This repo treats **signature state** and **tracking state** as separate concerns:
+
+- A file can be correctly signed but still missing from sbctl's tracked-file database.
+- `zz-sbctl.hook` only re-signs files that are tracked by sbctl.
+
+For normal unsigned files, `sbctl sign -s` both signs and tracks the file.
+
+For already-signed files, current Arch `sbctl 0.18-1` still has an upstream compatibility bug where `--save` may be ignored. Snapshot UKIs can hit exactly that case, because limine-snapper-sync may copy already-signed EFI files into snapshot history. When that happens, this repo writes the expected sbctl file entry directly so the file becomes truly tracked and future `zz-sbctl.hook` runs include it.
+
+This is why `sign` may report a snapshot UKI as `registered` instead of `signed`.
+
+Tracking reads use `sbctl list-files` first, then fall back to the on-disk sbctl file database only when needed. If a fallback is required, this repo prefers `files.db` over legacy `files.json`.
 
 ### Pacman Hooks (Automatic Maintenance)
 
@@ -147,6 +158,8 @@ The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after Limine-r
 **Why config enrollment is required:** Limine protects Secure Boot systems by embedding the checksum of `limine.conf` into the Limine EFI binary. Any time `limine.conf` changes, the checksum must be re-enrolled with `limine-enroll-config`.
 
 **Why path hashes are not managed here:** Limine also supports `path: ...#<blake2b>` suffixes, but Omarchy's current working state uses `ENABLE_VERIFICATION=no` instead. Snapshot filenames such as `omarchy_linux.efi_sha256_<hex>` come from `limine-snapper-sync`; that SHA256 is part of the filename, not a Limine `path:` hash suffix.
+
+**Why the repo does not rely only on sbctl internals:** Older sbctl states and migrations have used both `files.json` and `files.db`, while the public `sbctl list-files` CLI reflects the authoritative tracked set that hooks actually use. This repo therefore reads tracking state from the CLI first, and only falls back to the database for cleanup and compatibility logic.
 
 ### Windows EFI Entry
 
@@ -228,6 +241,14 @@ sudo omarchy-secureboot sign
 
 This restores the required `/etc/default/limine` settings, refreshes Limine-managed entries, and re-enrolls the current config checksum. The pacman hook does this automatically on relevant package updates.
 
+### `status` warns that `limine-snapper-sync.service` is not active
+
+This warning is informational. It refers to Omarchy's upstream snapshot watcher, not this repo's core commands.
+
+- Package-triggered repair still works through `zzz-omarchy-secureboot.hook`.
+- Manual repair still works through `sudo omarchy-secureboot sign`.
+- Immediate snapshot watching may require upstream watcher support such as `inotifywait`, which this repo does not require.
+
 ### `status` reports untracked snapshot UKIs
 
 This means new EFI files exist under `/boot` but are not yet in sbctl's database. Register and sign them with:
@@ -237,6 +258,8 @@ sudo omarchy-secureboot sign
 ```
 
 This is most common after snapshot activity that happened outside a pacman transaction.
+
+If this still appears immediately after a successful `sign`, check `sudo sbctl list-files` and verify the repo version is current. This repo includes a compatibility workaround for Arch `sbctl 0.18-1`, where `sbctl sign -s` may refuse to save an already-signed file.
 
 ### Windows disappeared from Limine boot menu
 
@@ -263,6 +286,17 @@ It deliberately delegates everything else:
 Don't automate what's already automated. Fill the gaps that aren't.
 
 Current limitation: this repo owns pacman-triggered maintenance, but it does not yet ship separate automation for non-pacman snapshot rewrites.
+
+### Session Notes
+
+The current design is deliberate:
+
+- keep Limine path verification disabled with `ENABLE_VERIFICATION=no`
+- keep Limine config enrollment enabled and refreshed automatically
+- treat snapshot filename SHA256 suffixes as limine-snapper-sync naming, not Limine path hashes
+- trust `sbctl list-files` first for tracked-file truth
+- keep direct sbctl database handling only for stale cleanup and the current `sbctl 0.18` save bug workaround
+- do not make `inotify-tools` a hard dependency, because it belongs to upstream limine-snapper-sync watcher behavior, not this repo's core command set
 
 ### Why `zz-sbctl.hook` works now
 
