@@ -203,6 +203,50 @@ clean_stale_entries() {
   done
 }
 
+# sbctl 0.18 ignores --save for already-signed files. Persist the SigningEntry
+# directly so zz-sbctl.hook can track snapshot UKIs on current Arch packages.
+save_sbctl_file_entry() {
+  local file="$1"
+  local files_db backup="" tmp db_json
+
+  files_db=$(resolve_sbctl_files_db_path) || return 1
+  mkdir -p "$(dirname "$files_db")" || return 1
+
+  if [[ -f "$files_db" ]]; then
+    backup=$(backup_file "$files_db") || return 1
+    db_json=$(<"$files_db") || db_json="{}"
+  else
+    db_json="{}"
+  fi
+
+  [[ -n "$db_json" && "$db_json" != "null" ]] || db_json="{}"
+
+  tmp=$(mktemp "/tmp/omarchy-secureboot.sbctl-files.XXXXXX") || {
+    [[ -z "$backup" ]] || discard_file_backup "$backup"
+    return 1
+  }
+
+  if ! printf '%s\n' "$db_json" | jq --arg file "$file" '
+    (if type == "object" then . else {} end)
+    | .[$file] = {file: $file, output_file: $file}
+  ' > "$tmp"; then
+    rm -f "$tmp"
+    [[ -z "$backup" ]] || discard_file_backup "$backup"
+    return 1
+  fi
+
+  if ! cp "$tmp" "$files_db"; then
+    [[ -z "$backup" ]] || restore_file_backup "$backup" "$files_db" || true
+    rm -f "$tmp"
+    [[ -z "$backup" ]] || discard_file_backup "$backup"
+    return 1
+  fi
+
+  rm -f "$tmp"
+  [[ -z "$backup" ]] || discard_file_backup "$backup"
+  return 0
+}
+
 # Discover all EFI files and sign any that are not yet signed.
 # Uses -s flag to register files in sbctl's database for zz-sbctl.hook.
 sign_all_efi() {
@@ -228,6 +272,15 @@ sign_all_efi() {
     if [[ "$is_signed" == "1" && -n "${enrolled_map[$file]:-}" ]]; then
       qpass "${file#"${ESP}"/} ${DIM}already signed${NC}"
       skipped=$((skipped + 1))
+    elif [[ "$is_signed" == "1" ]]; then
+      if save_sbctl_file_entry "$file"; then
+        qact "${file#"${ESP}"/} ${DIM}registered${NC}"
+        enrolled_map["$file"]=1
+        signed=$((signed + 1))
+      else
+        warn "Failed to register: ${file#"${ESP}"/}"
+        failed=$((failed + 1))
+      fi
     else
       local _sign_rc=0
       if [[ "$QUIET" == true ]]; then
@@ -236,11 +289,7 @@ sign_all_efi() {
         sbctl sign -s "$file" || _sign_rc=$?
       fi
       if [[ $_sign_rc -eq 0 ]]; then
-        if [[ "$is_signed" == "1" ]]; then
-          qact "${file#"${ESP}"/} ${DIM}registered${NC}"
-        else
-          qact "${file#"${ESP}"/} ${DIM}signed${NC}"
-        fi
+        qact "${file#"${ESP}"/} ${DIM}signed${NC}"
         enrolled_map["$file"]=1
         signed=$((signed + 1))
       else
