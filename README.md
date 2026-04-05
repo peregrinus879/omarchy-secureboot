@@ -4,17 +4,43 @@
 
 Creates signing keys, configures Limine for Omarchy's current Secure Boot model, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu. After setup, sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files and a companion hook (`zzz-omarchy-secureboot.hook`) repairs package-triggered drift by refreshing Limine state and enrolling newly discovered EFI files.
 
+## Why This Tool
+
+Omarchy uses Limine as its bootloader with Unified Kernel Images (UKIs) and Snapper snapshots. That stack has Secure Boot gaps that generic tools do not cover:
+
+- **sbctl** manages keys and signs EFI binaries, but does not handle Limine config enrollment, snapshot UKI discovery, or Windows dual-boot entries.
+- **shim/MOK** is designed for the GRUB and systemd-boot chains. Limine uses direct UEFI Secure Boot verification with custom keys enrolled via sbctl.
+- **systemd-boot** is not Omarchy's bootloader. This tool is specific to the Limine + UKI + Snapper stack that Omarchy ships.
+
+This tool fills those gaps: it automates Limine config enrollment, discovers and signs snapshot UKIs, manages Windows EFI entries, and keeps everything consistent through pacman hooks.
+
 ## Table of Contents
 
+- [Why This Tool](#why-this-tool)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
 - [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
+- [Recovery / Rollback](#recovery--rollback)
 - [Design Philosophy](#design-philosophy)
 - [License](#license)
 - [Credits](#credits)
+
+<details>
+<summary>Glossary</summary>
+
+| Term | Definition |
+|------|------------|
+| **ESP** | EFI System Partition. FAT32 partition used by UEFI firmware to find boot loaders. Mounted at `/boot` on Omarchy. |
+| **Setup Mode** | UEFI firmware state where Secure Boot keys can be enrolled. Entered by clearing existing keys in BIOS settings. |
+| **UKI** | Unified Kernel Image. Single EFI file containing kernel, initramfs, and command line. Built by `mkinitcpio` on Omarchy. |
+| **PARTUUID** | GPT partition UUID. Used by Limine to locate the Windows ESP at boot time without requiring it to be mounted in Linux. |
+| **Config enrollment** | Embedding `limine.conf`'s checksum into the Limine EFI binary so it can verify config integrity at boot. |
+| **Signing** | Attaching a cryptographic signature to an EFI binary so UEFI firmware can verify it has not been tampered with. |
+
+</details>
 
 ## Prerequisites
 
@@ -62,6 +88,11 @@ sudo omarchy-secureboot setup
 ```
 
 **Step 2** - Reboot into BIOS/UEFI, clear Secure Boot keys (enter Setup Mode), save and exit.
+
+> [!WARNING]
+> **Dual-boot with BitLocker?** Have your recovery key ready before Step 3.
+> Enrolling custom Secure Boot keys triggers BitLocker recovery on the next
+> Windows boot. See [Before You Begin](#before-you-begin-dual-boot-with-windows).
 
 **Step 3** - Enroll keys into firmware:
 
@@ -149,6 +180,8 @@ Two hooks work together after pacman transactions:
 
 The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after Limine-related tools have created or updated boot entries.
 
+Our hook triggers on packages matching `linux*`, `limine*`, or `snapper*`. Other package updates do not trigger it. `zz-sbctl.hook` (sbctl's built-in) triggers on all packages, so already-tracked files get re-signed on any pacman transaction. The gap is only for *new* EFI files created outside these triggers. Run `sudo omarchy-secureboot sign` in that case.
+
 **Why this matters:** The current Omarchy stack works with three separate pieces:
 
 - UEFI firmware verifies EFI binaries, so Omarchy UKIs, Limine EFI binaries, and the fallback loader must be signed.
@@ -193,6 +226,18 @@ Bootloader update
   -> zz-sbctl.hook re-signs bootloader files
   -> zzz-omarchy-secureboot.hook refreshes config enrollment and signs new files
 ```
+
+### Code Structure
+
+Single dispatcher (`bin/omarchy-secureboot`) sources modular libraries:
+
+- `common.sh` -- output helpers, quiet mode, backup/restore
+- `checks.sh` -- prerequisite validation (root, deps, EFI mount)
+- `discover.sh` -- EFI file discovery and sbctl database queries
+- `sign.sh` -- key creation, signing, Limine config management
+- `enroll.sh` -- firmware key enrollment
+- `windows.sh` -- Windows ESP detection and Limine entry management
+- `status.sh` -- status display and file verification
 
 ## Troubleshooting
 
@@ -268,6 +313,40 @@ This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine
 ```bash
 sudo omarchy-secureboot sign
 ```
+
+## Recovery / Rollback
+
+### Emergency boot recovery
+
+If the system will not boot with Secure Boot enabled:
+
+1. Enter BIOS/UEFI firmware settings
+2. Disable Secure Boot temporarily
+3. Boot into Linux normally
+4. Diagnose with `sudo omarchy-secureboot status`
+5. Repair with `sudo omarchy-secureboot sign`
+6. Re-enable Secure Boot in BIOS after confirming all files verify
+
+### Full rollback
+
+To remove Secure Boot entirely and return to an unsigned boot state:
+
+1. Disable Secure Boot in BIOS/UEFI firmware settings
+2. Optionally reset Secure Boot keys to factory defaults (re-enrolls Microsoft-only keys)
+3. Run `sudo make uninstall` from the repo to remove the tool and pacman hook
+
+Existing EFI signatures are harmless with Secure Boot disabled. No need to re-sign or strip signatures.
+
+### Re-enrollment after key reset
+
+If BIOS keys are cleared (factory reset, accidental clear, or hardware change):
+
+1. The local signing keys from `sbctl create-keys` are still on disk. No need to recreate them.
+2. Enter Setup Mode in BIOS (clear/reset Secure Boot keys)
+3. Run `sudo omarchy-secureboot enroll` to re-enroll your keys
+4. Enable Secure Boot in BIOS
+
+If you need to verify your keys still exist: `sbctl status`
 
 ## Design Philosophy
 
