@@ -1,4 +1,4 @@
-# omarchy-secureboot
+# AGENTS.md - omarchy-secureboot
 
 Secure Boot setup tool for Omarchy (Arch Linux + Limine) with Windows dual-boot support.
 
