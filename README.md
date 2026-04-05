@@ -388,5 +388,3 @@ sbctl's built-in pacman hook previously failed on Omarchy because it tried to si
 ## Credits
 
 Created by [peregrinus879](https://github.com/peregrinus879).
-
-Developed with assistance from [Claude Code](https://claude.ai/code) by Anthropic.
