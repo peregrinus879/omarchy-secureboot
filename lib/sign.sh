@@ -149,14 +149,6 @@ enroll_limine_config() {
   limine-enroll-config || return 1
 }
 
-# Compatibility shim for older call sites.
-# Limine path verification stays disabled via ENABLE_VERIFICATION=no, so this
-# repo does not maintain Limine #hash suffixes in path: lines.
-strip_limine_hashes() {
-  qpass "Limine path verification intentionally disabled"
-  return 1
-}
-
 # Create sbctl signing keys if they do not already exist.
 create_keys() {
   local installed
@@ -209,8 +201,8 @@ save_sbctl_file_entry() {
   local file="$1"
   local files_db backup="" tmp db_json
 
-  files_db=$(resolve_sbctl_files_db_path) || return 1
-  mkdir -p "$(dirname "$files_db")" || return 1
+  files_db=$(resolve_sbctl_files_db_path) || { warn "Could not resolve sbctl files database path"; return 1; }
+  mkdir -p "$(dirname "$files_db")" || { warn "Could not create directory for ${files_db}"; return 1; }
 
   if [[ -f "$files_db" ]]; then
     backup=$(backup_file "$files_db") || return 1
@@ -230,12 +222,14 @@ save_sbctl_file_entry() {
     (if type == "object" then . else {} end)
     | .[$file] = {file: $file, output_file: $file}
   ' > "$tmp"; then
+    warn "Could not update sbctl database entry for ${file}"
     rm -f "$tmp"
     [[ -z "$backup" ]] || discard_file_backup "$backup"
     return 1
   fi
 
   if ! cp "$tmp" "$files_db"; then
+    warn "Could not write ${files_db}"
     [[ -z "$backup" ]] || restore_file_backup "$backup" "$files_db" || true
     rm -f "$tmp"
     [[ -z "$backup" ]] || discard_file_backup "$backup"

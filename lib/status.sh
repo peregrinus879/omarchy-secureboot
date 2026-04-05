@@ -103,14 +103,18 @@ show_status() {
       all_ok=false
     fi
 
-    if grep -Eq '^COMMANDS_BEFORE_SAVE=.*(^|[[:space:]"])limine-reset-enroll([[:space:]"]|$)' /etc/default/limine 2>/dev/null; then
+    local cmd_before
+    cmd_before=$(grep -m1 '^COMMANDS_BEFORE_SAVE=' /etc/default/limine 2>/dev/null | cut -d= -f2-)
+    if [[ -n "$cmd_before" ]] && echo "$cmd_before" | tr -d '"' | grep -qw 'limine-reset-enroll'; then
       pass "COMMANDS_BEFORE_SAVE includes limine-reset-enroll"
     else
       fail "COMMANDS_BEFORE_SAVE is missing limine-reset-enroll"
       all_ok=false
     fi
 
-    if grep -Eq '^COMMANDS_AFTER_SAVE=.*(^|[[:space:]"])limine-enroll-config([[:space:]"]|$)' /etc/default/limine 2>/dev/null; then
+    local cmd_after
+    cmd_after=$(grep -m1 '^COMMANDS_AFTER_SAVE=' /etc/default/limine 2>/dev/null | cut -d= -f2-)
+    if [[ -n "$cmd_after" ]] && echo "$cmd_after" | tr -d '"' | grep -qw 'limine-enroll-config'; then
       pass "COMMANDS_AFTER_SAVE includes limine-enroll-config"
     else
       fail "COMMANDS_AFTER_SAVE is missing limine-enroll-config"
