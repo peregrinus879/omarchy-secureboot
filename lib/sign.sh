@@ -134,19 +134,57 @@ apply_limine_secure_boot_settings() {
 refresh_limine_config() {
   command -v limine-update >/dev/null 2>&1 || return 1
   qact "Regenerating Limine boot entries"
-  limine-update || return 1
+  if [[ "$QUIET" == true ]]; then
+    limine-update >/dev/null || return 1
+  else
+    limine-update || return 1
+  fi
 
   if command -v limine-snapper-sync >/dev/null 2>&1; then
     qact "Refreshing Limine snapshot entries"
-    limine-snapper-sync || return 1
+    if [[ "$QUIET" == true ]]; then
+      limine-snapper-sync >/dev/null || return 1
+    else
+      limine-snapper-sync || return 1
+    fi
   fi
+}
+
+# Capture the limine.conf checksum for later change detection.
+# Call immediately after refresh_limine_config() to establish the baseline.
+snapshot_limine_conf_hash() {
+  [[ -f "$LIMINE_CONF" ]] || return 0
+  _limine_conf_hash=$(md5sum "$LIMINE_CONF" | cut -d' ' -f1) || _limine_conf_hash=""
 }
 
 # Enroll the current limine.conf checksum into the Limine EFI binary.
 enroll_limine_config() {
   command -v limine-enroll-config >/dev/null 2>&1 || return 1
   qact "Enrolling Limine config checksum"
-  limine-enroll-config || return 1
+  if [[ "$QUIET" == true ]]; then
+    limine-enroll-config >/dev/null || return 1
+  else
+    limine-enroll-config || return 1
+  fi
+}
+
+# Re-enroll the limine.conf checksum only if the config file has changed
+# since the last enrollment (done by refresh_limine_config via limine-update).
+# Avoids unnecessary Limine binary modifications that would change TPM PCR
+# measurements and trigger BitLocker recovery.
+reenroll_limine_config_if_changed() {
+  command -v limine-enroll-config >/dev/null 2>&1 || return 1
+  [[ -f "$LIMINE_CONF" ]] || return 1
+
+  local current_hash
+  current_hash=$(md5sum "$LIMINE_CONF" | cut -d' ' -f1) || return 1
+
+  if [[ "${_limine_conf_hash:-}" == "$current_hash" ]]; then
+    qpass "Limine config unchanged, skipping re-enrollment"
+    return 0
+  fi
+
+  enroll_limine_config
 }
 
 # Create sbctl signing keys if they do not already exist.
