@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch Omarchy boot files for Secure Boot repair
+
+[Path]
+PathChanged=/boot/limine.conf
+PathChanged=/boot/EFI/Linux
+PathChanged=/boot/EFI/BOOT
+PathChanged=/boot/EFI/limine
+Unit=omarchy-secureboot-watcher.service
+
+[Install]
+WantedBy=multi-user.target

@@ -130,7 +130,7 @@ apply_limine_secure_boot_settings() {
   ensure_limine_secure_boot_settings
 }
 
-# Regenerate Limine entries after changing /etc/default/limine.
+# Regenerate Limine entries during setup or explicit rebuild flows.
 refresh_limine_config() {
   command -v limine-update >/dev/null 2>&1 || return 1
   qact "Regenerating Limine boot entries"
@@ -150,8 +150,7 @@ refresh_limine_config() {
   fi
 }
 
-# Capture the limine.conf checksum for later change detection.
-# Call immediately after refresh_limine_config() to establish the baseline.
+# Capture the current limine.conf checksum for later change detection.
 snapshot_limine_conf_hash() {
   [[ -f "$LIMINE_CONF" ]] || return 0
   _limine_conf_hash=$(md5sum "$LIMINE_CONF" | cut -d' ' -f1) || _limine_conf_hash=""
@@ -169,9 +168,7 @@ enroll_limine_config() {
 }
 
 # Re-enroll the limine.conf checksum only if the config file has changed
-# since the last enrollment (done by refresh_limine_config via limine-update).
-# Avoids unnecessary Limine binary modifications that would change TPM PCR
-# measurements and trigger BitLocker recovery.
+# since the last recorded checksum.
 reenroll_limine_config_if_changed() {
   command -v limine-enroll-config >/dev/null 2>&1 || return 1
   [[ -f "$LIMINE_CONF" ]] || return 1

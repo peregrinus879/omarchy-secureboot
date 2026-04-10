@@ -63,6 +63,29 @@ show_status() {
   fi
 
   if command -v systemctl >/dev/null 2>&1; then
+    local watcher_load_state watcher_enabled_state watcher_active_state
+    watcher_load_state=$(systemctl show -p LoadState --value omarchy-secureboot-watcher.path 2>/dev/null || true)
+    if [[ "$watcher_load_state" == "loaded" ]]; then
+      watcher_enabled_state=$(systemctl is-enabled omarchy-secureboot-watcher.path 2>/dev/null || true)
+      watcher_active_state=$(systemctl is-active omarchy-secureboot-watcher.path 2>/dev/null || true)
+
+      if [[ "$watcher_enabled_state" == "enabled" ]]; then
+        pass "omarchy-secureboot-watcher.path enabled"
+      else
+        warn "omarchy-secureboot-watcher.path not enabled (${watcher_enabled_state:-unknown})"
+      fi
+
+      if [[ "$watcher_active_state" == "active" ]]; then
+        pass "omarchy-secureboot-watcher.path active"
+      else
+        warn "omarchy-secureboot-watcher.path not active (${watcher_active_state:-unknown})"
+      fi
+    else
+      warn "omarchy-secureboot-watcher.path missing. Run: ${BOLD}sudo make install${NC} from repo"
+    fi
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
     local load_state enabled_state active_state
     load_state=$(systemctl show -p LoadState --value limine-snapper-sync.service 2>/dev/null || true)
     if [[ "$load_state" == "loaded" ]]; then
@@ -80,7 +103,7 @@ show_status() {
       else
         warn "limine-snapper-sync.service not active (${active_state:-unknown})"
         if ! command -v inotifywait >/dev/null 2>&1; then
-          echo -e "  ${DIM}Optional upstream watcher helper missing: ${BOLD}inotify-tools${NC}${DIM}. Manual ${BOLD}sign${NC}${DIM} still works.${NC}"
+          echo -e "  ${DIM}Optional upstream watcher helper missing: ${BOLD}inotify-tools${NC}${DIM}. Repo watcher coverage does not depend on it.${NC}"
         fi
       fi
     fi
@@ -178,7 +201,7 @@ show_status() {
           echo -e "    ${YELLOW}!${NC} $file"
         done
         if printf '%s\n' "${untracked[@]}" | grep -q '\.efi_sha256_'; then
-          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. Run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} after non-pacman snapshot changes.${NC}"
+          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. The watcher should repair this automatically; run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} if you need an immediate manual repair.${NC}"
         fi
         all_ok=false
       fi
