@@ -181,6 +181,7 @@ add_windows_entry() {
 
   update_windows_entry_block "$partuuid" || return 1
   enroll_limine_config || return 1
+  sign_all_efi || warn "Some EFI files could not be re-signed"
   mkdir -p "$STATE_DIR"
   touch "${STATE_DIR}/windows-enabled"
   pass "Windows entry added to limine.conf"

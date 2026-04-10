@@ -114,7 +114,7 @@ Done. Hooks handle package-triggered maintenance automatically after relevant pa
 
 ### `setup`
 
-Creates signing keys (or skips if they exist), enforces `ENABLE_VERIFICATION=no` plus Limine config enrollment settings, regenerates boot entries, refreshes snapshot entries, cleans stale sbctl database entries, signs EFI files on the ESP, ensures they are tracked by sbctl, and enrolls the current `limine.conf` checksum into the Limine EFI binary.
+Creates signing keys (or skips if they exist), enforces `ENABLE_VERIFICATION=no` plus Limine config enrollment settings, regenerates boot entries, refreshes snapshot entries, restores/upgrades the Windows entry, re-enrolls the `limine.conf` checksum if the config changed, cleans stale sbctl database entries, and signs all EFI files on the ESP as the final step.
 
 ### `enroll`
 
@@ -132,7 +132,7 @@ Shows Secure Boot state, hook status, Windows entry, and enrolled file verificat
 
 ### `sign`
 
-Repairs Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, regenerating boot entries, refreshing snapshot entries, re-signing EFI files, ensuring new EFI files are tracked by sbctl, restoring/upgrading the Windows entry, and re-enrolling the current `limine.conf` checksum. Used manually or by the pacman hook.
+Repairs Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, regenerating boot entries, refreshing snapshot entries, restoring/upgrading the Windows entry, re-enrolling the `limine.conf` checksum if the config changed, cleaning stale database entries, and signing all EFI files as the final step. Used manually or by the pacman hook.
 
 ### `help`
 
@@ -176,7 +176,7 @@ Two hooks work together after pacman transactions:
 | Hook | Trigger | Purpose |
 |---|---|---|
 | `zz-sbctl.hook` (sbctl built-in) | All packages | Re-signs files already in sbctl's database |
-| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Refreshes Limine config, re-enrolls its checksum, discovers/signs new EFI files, restores Windows entry if wiped |
+| `zzz-omarchy-secureboot.hook` (ours) | linux*, limine*, snapper* | Refreshes Limine config, restores Windows entry if wiped, re-enrolls config checksum if changed, signs EFI files last |
 
 The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after Limine-related tools have created or updated boot entries.
 
