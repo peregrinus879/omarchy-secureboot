@@ -104,13 +104,13 @@ sudo omarchy-secureboot enroll
 
 **Step 4** - Reboot into BIOS/UEFI, enable Secure Boot, save and exit.
 
-**Step 5** *(dual-boot only)* - Add Windows to Limine boot menu and boot into it:
+**Step 5** *(dual-boot only)* - Add Windows to Limine boot menu:
 
 ```bash
 sudo omarchy-secureboot windows
 ```
 
-The first run adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Subsequent runs reboot directly to Windows. The pacman hook handles package-triggered maintenance, and the watcher handles non-pacman boot drift automatically.
+The first run adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Subsequent runs set BootNext and reboot to Windows immediately. You can also select Windows from the Limine boot menu directly. The pacman hook handles package-triggered maintenance, and the watcher handles non-pacman boot drift automatically.
 
 ## Commands
 
@@ -126,7 +126,7 @@ Checks that firmware is in Setup Mode, then enrolls signing keys with:
 
 ### `windows`
 
-On first run, detects the Windows Boot Manager in firmware boot entries (by `bootmgfw.efi` loader path), adds a Limine menu entry using the `efi_boot_entry` protocol, enrolls the config checksum, and signs EFI files. On subsequent runs, sets the firmware BootNext variable to the Windows Boot Manager entry and reboots immediately. Both paths result in Windows booting directly from firmware, bypassing `limine_x64.efi`. Requires `efibootmgr`.
+First run: detects the Windows Boot Manager in firmware boot entries (by `bootmgfw.efi` loader path), adds a Limine menu entry using the `efi_boot_entry` protocol, enrolls the config checksum, and signs EFI files. Does not reboot. Subsequent runs: sets the firmware BootNext variable to the Windows Boot Manager entry and reboots immediately. You can also select Windows from the Limine boot menu directly; it triggers the same firmware BootNext handoff. Requires `efibootmgr`.
 
 ### `status`
 
