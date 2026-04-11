@@ -18,7 +18,7 @@ Single dispatcher sources lib modules. Each lib file owns one concern:
 - `discover.sh` - EFI file discovery, sbctl tracked-file discovery, sbctl database fallback helpers
 - `sign.sh` - key creation, signing, sbctl compatibility registration, stale entry cleanup, Limine verification/enrollment helpers
 - `enroll.sh` - key enrollment with `-m -f` flags
-- `windows.sh` - Windows ESP detection, PARTUUID-based Limine EFI entry restoration
+- `windows.sh` - Windows firmware BootNext handoff and Limine `efi_boot_entry` management
 - `status.sh` - status display, hook checks, Limine verification/enrollment checks, tracked vs discovered EFI verification
 
 ## Dependencies
@@ -73,7 +73,7 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 
 - **Snapshot UKI naming**: limine-snapper-sync creates snapshot UKIs with the pattern `filename.efi_sha256_[64-hex-chars]`. The SHA256 suffix is part of the filename, not a Limine `path: ...#hash` suffix.
 - **Limine Secure Boot model**: `setup` and `sign` ensure `ENABLE_VERIFICATION=no`, `ENABLE_ENROLL_LIMINE_CONFIG=yes`, `COMMANDS_BEFORE_SAVE` contains `limine-reset-enroll`, and `COMMANDS_AFTER_SAVE` contains `limine-enroll-config`. This repo signs EFI binaries with sbctl while keeping Limine path verification disabled and limine.conf checksum enrollment enabled.
-- **EFI entry handling**: Omarchy boots UKIs via `protocol: efi`, and Windows is added as a Limine EFI entry. For this repo, the important Secure Boot invariants are signed EFI binaries, disabled Limine path verification, and an enrolled Limine config checksum.
+- **EFI entry handling**: Omarchy boots UKIs via `protocol: efi`. Windows uses `protocol: efi_boot_entry`, which sets firmware BootNext and triggers a reboot so Windows boots directly from `bootmgfw.efi` without going through `limine_x64.efi`. This avoids TPM PCR drift caused by `limine-snapper-sync` re-enrolling `limine_x64.efi` on every snapshot change. Detection uses `efibootmgr -v` matching on the `bootmgfw.efi` loader path, not label. The `windows` command also provides a direct `efibootmgr -n` reboot path from Linux.
 - **Command split**: `cmd_setup()` is the full provisioning path and may regenerate Limine-managed boot state. `cmd_sign()` must stay lightweight and repair the current boot state without calling `limine-update` or rebuilding UKIs.
 - **Signing-last invariant**: both `cmd_setup()` and `cmd_sign()` must always run `sign_all_efi()` as the final mutation step. Any repo-managed `limine.conf` change or Limine config re-enrollment must happen before signing so the final signed state matches the repaired boot state.
 - **Tracked-file source of truth**: prefer `sbctl list-files` over direct database parsing. Use direct database access only as fallback and for cleanup/compatibility logic.
@@ -89,6 +89,7 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 - Do not add repo migration code unless multiple deployed installs require it. For this project, a one-user local transition did not justify permanent migration logic.
 - Prefer minimal repo-owned automation over replacing Omarchy behavior. The repo fills dual-boot/Secure-Boot gaps; it should not compete with mkinitcpio, limine-entry-tool, or limine-snapper-sync.
 - Prefer the repo-owned watcher for non-pacman drift. Do not make `inotify-tools` a hard prerequisite.
+- Prefer `protocol: efi_boot_entry` over `protocol: efi` for Windows. The chainload protocol measures `limine_x64.efi` in TPM PCR, and `limine-snapper-sync` mutates that binary on every snapshot change, making PCR values unstable for BitLocker. The `efi_boot_entry` protocol triggers a firmware reboot, keeping `limine_x64.efi` out of the Windows boot measurement chain.
 
 ## Conventions
 
