@@ -109,7 +109,7 @@ cmd_help() {
   echo -e "  ${BOLD}Commands${NC}"
   echo "    setup       Set Limine verification/enrollment state and sign EFI files"
   echo "    enroll      Enroll keys into firmware (requires Setup Mode)"
-  echo "    windows     Add Windows to Limine menu, or reboot to Windows immediately"
+  echo "    windows     Add Windows to Limine menu (first run) or reboot to Windows (after)"
   echo "    status      Show Secure Boot status and file verification"
   echo "    sign        Reassert Limine settings, repair config drift, and sign EFI files"
   echo "    help        Show this help"
@@ -123,7 +123,7 @@ cmd_help() {
   echo "    2. Reboot -> BIOS -> enable Setup Mode (clear keys)"
   echo "    3. sudo omarchy-secureboot enroll"
   echo "    4. Reboot -> BIOS -> enable Secure Boot"
-  echo "    5. sudo omarchy-secureboot windows   (if dual-booting)"
+  echo "    5. sudo omarchy-secureboot windows   (adds menu entry; later runs reboot to Windows)"
   echo
 }
 

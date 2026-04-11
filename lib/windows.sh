@@ -146,8 +146,13 @@ add_windows_boot_entry() {
 # Restores the entry if missing (when user previously opted in).
 # Upgrades from legacy protocol: efi to efi_boot_entry if needed.
 ensure_windows_boot_entry() {
-  [[ -f "${STATE_DIR}/windows-enabled" ]] || return 0
   [[ -f "$LIMINE_CONF" ]] || return 0
+
+  # Act if user opted in via 'windows' command, or if a repo-managed block
+  # already exists in limine.conf (covers older installs without the marker file)
+  if [[ ! -f "${STATE_DIR}/windows-enabled" ]]; then
+    grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null || return 0
+  fi
 
   # Already present with correct protocol
   if grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null \
