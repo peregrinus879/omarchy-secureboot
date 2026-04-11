@@ -15,8 +15,11 @@ find_windows_boot_entry() {
     | grep -oP 'Boot\K[0-9A-Fa-f]+') || true
   [[ -n "$bootnum" ]] || return 1
 
+  # Extract just the human-readable label, stripping any device path info
+  # that efibootmgr may append (tab-separated or space-separated HD(...))
   entry_name=$(efibootmgr 2>/dev/null \
-    | sed -n "s/^Boot${bootnum}\*\? //p") || true
+    | sed -n "s/^Boot${bootnum}\*\? //p" \
+    | sed -e 's/\t.*//' -e 's/[[:space:]][[:space:]]*HD(.*//' -e 's/[[:space:]][[:space:]]*PciRoot(.*//' -e 's/[[:space:]]*$//') || true
   [[ -n "$entry_name" ]] || return 1
 
   printf '%s\t%s\n' "$bootnum" "$entry_name"
