@@ -1,73 +1,32 @@
 #!/bin/bash
-# omarchy-secureboot: Windows dual-boot detection and Limine EFI entry
+# omarchy-secureboot: Windows dual-boot via firmware BootNext
 
 readonly WINDOWS_ENTRY_MARKER="# omarchy-secureboot:windows"
-readonly BOOTMGFW_REL="EFI/Microsoft/Boot/bootmgfw.efi"
 
-# Find Windows Boot Manager on any EFI System Partition.
-# Returns the partition device path (e.g., /dev/sdb1) or empty string.
-find_windows_esp() {
-  local dev mountpoint tmpdir="" found=""
+# Find the Windows Boot Manager firmware entry by loader path.
+# Prints "bootnum<TAB>entry_name" or returns 1 if not found.
+find_windows_boot_entry() {
+  command -v efibootmgr >/dev/null 2>&1 || return 1
 
-  # Clean up temporary mount on interruption or exit.
-  cleanup_windows_mount() {
-    [[ -z "$tmpdir" ]] && return
-    umount "$tmpdir" 2>/dev/null || true
-    rmdir "$tmpdir" 2>/dev/null || true
-    tmpdir=""
-  }
-  trap cleanup_windows_mount EXIT
+  local bootnum entry_name
 
-  # Check partitions typed as EFI System Partition (C12A7328-...)
-  while IFS= read -r dev; do
-    [[ -z "$dev" ]] && continue
+  bootnum=$(efibootmgr -v 2>/dev/null \
+    | grep -i 'bootmgfw\.efi' | head -1 \
+    | grep -oP 'Boot\K[0-9A-Fa-f]+') || true
+  [[ -n "$bootnum" ]] || return 1
 
-    # If already mounted, check directly
-    mountpoint=$(findmnt -n -o TARGET "$dev" 2>/dev/null || true)
-    if [[ -n "$mountpoint" ]]; then
-      if [[ -f "${mountpoint}/${BOOTMGFW_REL}" ]]; then
-        trap - EXIT
-        cleanup_windows_mount
-        echo "$dev"
-        return 0
-      fi
-      continue
-    fi
+  entry_name=$(efibootmgr 2>/dev/null \
+    | sed -n "s/^Boot${bootnum}\*\? //p") || true
+  [[ -n "$entry_name" ]] || return 1
 
-    # Temporarily mount and check
-    tmpdir=$(mktemp -d)
-    if mount -t vfat -o ro "$dev" "$tmpdir" 2>/dev/null; then
-      if [[ -f "${tmpdir}/${BOOTMGFW_REL}" ]]; then
-        found="$dev"
-      fi
-      umount "$tmpdir" 2>/dev/null
-    fi
-    rmdir "$tmpdir" 2>/dev/null
-    tmpdir=""
-
-    if [[ -n "$found" ]]; then
-      trap - EXIT
-      cleanup_windows_mount
-      echo "$found"
-      return 0
-    fi
-  done < <(lsblk -nrpo NAME,PARTTYPE 2>/dev/null \
-    | grep -i "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" \
-    | awk '{print $1}')
-
-  trap - EXIT
-  cleanup_windows_mount
-  return 1
+  printf '%s\t%s\n' "$bootnum" "$entry_name"
 }
 
-# Get the PARTUUID of a partition device.
-get_partuuid() {
-  blkid -s PARTUUID -o value "$1" 2>/dev/null
-}
-
-# Insert or replace the repo-managed Windows block in limine.conf.
-update_windows_entry_block() {
-  local partuuid="$1"
+# Write the Windows efi_boot_entry block to limine.conf.
+# Uses Limine's efi_boot_entry protocol which sets BootNext and reboots,
+# keeping limine_x64.efi out of the Windows TPM measurement chain.
+update_windows_boot_entry() {
+  local entry_name="$1"
   local backup tmp
 
   backup=$(backup_file "$LIMINE_CONF") || {
@@ -81,14 +40,14 @@ update_windows_entry_block() {
     return 1
   }
 
-  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" -v rel="$BOOTMGFW_REL" -v partuuid="$partuuid" '
+  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" -v entry_name="$entry_name" '
     function print_block() {
       print ""
       print marker
       print "/Windows"
-      print "    comment: Windows Boot Manager"
-      print "    protocol: efi"
-      print "    path: guid(" partuuid "):" "/" rel
+      print "    comment: " entry_name
+      print "    protocol: efi_boot_entry"
+      print "    entry: " entry_name
       inserted = 1
     }
 
@@ -124,7 +83,7 @@ update_windows_entry_block() {
   ' "$LIMINE_CONF" > "$tmp"; then
     rm -f "$tmp"
     discard_file_backup "$backup"
-    fail "Failed to write Windows entry to ${LIMINE_CONF}"
+    fail "Failed to write Windows boot entry to ${LIMINE_CONF}"
     return 1
   fi
 
@@ -140,95 +99,80 @@ update_windows_entry_block() {
   discard_file_backup "$backup"
 }
 
-# Add a Windows EFI entry to limine.conf (interactive).
-add_windows_entry() {
+# Add Windows to Limine boot menu using efi_boot_entry protocol (interactive).
+add_windows_boot_entry() {
   header "Windows Dual-Boot"
 
-  # Check if entry already exists
   if grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
-    pass "Windows entry already in limine.conf"
+    pass "Windows boot entry already in limine.conf"
     return 0
   fi
 
-  act "Scanning EFI partitions for Windows Boot Manager..."
-  local win_dev
-  win_dev=$(find_windows_esp) || true
-
-  if [[ -z "$win_dev" ]]; then
-    fail "Windows Boot Manager not found on any EFI partition"
+  local boot_info bootnum entry_name
+  boot_info=$(find_windows_boot_entry) || {
+    fail "Windows Boot Manager not found in EFI boot entries"
     echo
     echo -e "  ${BOLD}Troubleshooting${NC}"
     echo "    - Ensure the Windows SSD is connected and visible in BIOS"
-    echo "    - Check with: lsblk -f"
+    echo "    - Check with: efibootmgr -v"
     echo
     return 1
-  fi
+  }
+  IFS=$'\t' read -r bootnum entry_name <<< "$boot_info"
 
-  local partuuid
-  partuuid=$(get_partuuid "$win_dev") || true
-  if [[ -z "$partuuid" ]]; then
-    fail "Could not determine PARTUUID for ${win_dev}"
-    return 1
-  fi
-
-  pass "Found Windows Boot Manager on ${win_dev}"
-  act "PARTUUID: ${partuuid}"
+  pass "Found ${entry_name} (Boot${bootnum})"
 
   if ! gum confirm "Add Windows to Limine boot menu?"; then
     warn "Aborted"
     return 1
   fi
 
-  update_windows_entry_block "$partuuid" || return 1
+  update_windows_boot_entry "$entry_name" || return 1
   enroll_limine_config || return 1
   sign_all_efi || warn "Some EFI files could not be re-signed"
   mkdir -p "$STATE_DIR"
   touch "${STATE_DIR}/windows-enabled"
-  pass "Windows entry added to limine.conf"
+  pass "Windows boot entry added to limine.conf"
   echo
-  echo -e "  ${DIM}Windows will appear in the Limine boot menu on next reboot.${NC}"
+  echo -e "  ${DIM}Windows will appear in the Limine boot menu. Selecting it triggers${NC}"
+  echo -e "  ${DIM}a firmware reboot directly into Windows (bypasses limine_x64.efi).${NC}"
   echo
 }
 
-# Upgrade existing Windows entry to include comment if missing.
-upgrade_windows_entry() {
+# Ensure the Windows boot entry is present and uses the efi_boot_entry protocol.
+# Restores the entry if missing (when user previously opted in).
+# Upgrades from legacy protocol: efi to efi_boot_entry if needed.
+ensure_windows_boot_entry() {
+  [[ -f "${STATE_DIR}/windows-enabled" ]] || return 0
   [[ -f "$LIMINE_CONF" ]] || return 0
-  grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" || return 0
 
-  if grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "protocol: efi" \
-    && grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "path: guid(" \
-    && ! grep -A5 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q 'image_path:'; then
+  # Already present with correct protocol
+  if grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null \
+     && grep -A4 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "protocol: efi_boot_entry"; then
     return 0
   fi
 
-  local win_dev partuuid
-  win_dev=$(find_windows_esp) || return 0
-  [[ -n "$win_dev" ]] || return 0
+  local boot_info bootnum entry_name
+  boot_info=$(find_windows_boot_entry) || return 0
+  IFS=$'\t' read -r bootnum entry_name <<< "$boot_info"
 
-  partuuid=$(get_partuuid "$win_dev") || return 0
-  [[ -n "$partuuid" ]] || return 0
-
-  update_windows_entry_block "$partuuid" || return 1
-  qact "Upgraded Windows entry for Secure Boot"
+  update_windows_boot_entry "$entry_name" || return 1
+  qact "Windows boot entry updated in limine.conf"
 }
 
-# Restore the Windows entry if it was wiped (e.g., by omarchy-refresh-limine).
-# Non-interactive: only acts if user previously opted in via 'windows' command.
-restore_windows_entry() {
-  # Already present, nothing to do
-  grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null && return 0
+# Set firmware BootNext to Windows Boot Manager and reboot immediately.
+# Detects by bootmgfw.efi loader path, not by label.
+reboot_to_windows() {
+  local boot_info bootnum entry_name
+  boot_info=$(find_windows_boot_entry) || {
+    fail "Windows Boot Manager not found in EFI boot entries"
+    echo -e "  ${DIM}Check with: efibootmgr -v${NC}"
+    return 1
+  }
+  IFS=$'\t' read -r bootnum entry_name <<< "$boot_info"
 
-  # Never opted in via 'omarchy-secureboot windows', skip
-  [[ -f "${STATE_DIR}/windows-enabled" ]] || return 0
-
-  local win_dev
-  win_dev=$(find_windows_esp) || return 0
-  [[ -z "$win_dev" ]] && return 0
-
-  local partuuid
-  partuuid=$(get_partuuid "$win_dev") || return 0
-  [[ -z "$partuuid" ]] && return 0
-
-  update_windows_entry_block "$partuuid" || return 1
-  qact "Restored Windows entry in limine.conf"
+  efibootmgr -n "$bootnum" >/dev/null || die "Could not set BootNext"
+  pass "BootNext set to ${entry_name} (Boot${bootnum})"
+  act "Rebooting to Windows. Linux resumes on the following boot."
+  systemctl reboot
 }

@@ -148,11 +148,26 @@ show_status() {
     all_ok=false
   fi
 
-  # Windows entry
-  if grep -q "# omarchy-secureboot:windows" "$LIMINE_CONF" 2>/dev/null; then
-    pass "Windows EFI entry in limine.conf"
+  # Windows boot path
+  if efibootmgr -v 2>/dev/null | grep -qi 'bootmgfw\.efi'; then
+    pass "Windows Boot Manager in firmware boot entries"
   else
-    echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add)${NC}"
+    echo -e "  ${DIM}No Windows Boot Manager found (check BIOS boot settings)${NC}"
+  fi
+
+  if grep -q "omarchy-secureboot:windows" "$LIMINE_CONF" 2>/dev/null; then
+    if grep -A4 "omarchy-secureboot:windows" "$LIMINE_CONF" | grep -q "protocol: efi_boot_entry"; then
+      pass "Windows boot entry in limine.conf (firmware BootNext)"
+    else
+      warn "Legacy Windows chainload entry in limine.conf may trigger BitLocker"
+      echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} to upgrade it${NC}"
+    fi
+  else
+    if [[ -f "${STATE_DIR}/windows-enabled" ]]; then
+      echo -e "  ${DIM}Windows boot entry missing from limine.conf (will be restored by sign)${NC}"
+    else
+      echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add)${NC}"
+    fi
   fi
 
   # Tracked files (root only)

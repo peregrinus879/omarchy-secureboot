@@ -37,8 +37,7 @@ cmd_setup() {
   refresh_limine_config || die "Could not regenerate Limine config"
 
   snapshot_limine_conf_hash
-  restore_windows_entry || true
-  upgrade_windows_entry || true
+  ensure_windows_boot_entry || true
   reenroll_limine_config_if_changed || die "Could not enroll Limine config checksum"
 
   clean_stale_entries
@@ -69,10 +68,15 @@ cmd_enroll() {
 }
 
 cmd_windows() {
-  check_deps
   check_root "windows"
-  require_gum
-  add_windows_entry
+  if ! grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
+    check_deps
+    require_gum
+    add_windows_boot_entry
+    return $?
+  fi
+  header "Boot to Windows"
+  reboot_to_windows
 }
 
 cmd_sign() {
@@ -82,8 +86,7 @@ cmd_sign() {
   qheader "Signing EFI Files"
   apply_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
   snapshot_limine_conf_hash
-  restore_windows_entry || true
-  upgrade_windows_entry || true
+  ensure_windows_boot_entry || true
   reenroll_limine_config_if_changed || die "Could not enroll Limine config checksum"
   clean_stale_entries
   local sign_rc=0
@@ -106,7 +109,7 @@ cmd_help() {
   echo -e "  ${BOLD}Commands${NC}"
   echo "    setup       Set Limine verification/enrollment state and sign EFI files"
   echo "    enroll      Enroll keys into firmware (requires Setup Mode)"
-  echo "    windows     Add a Windows EFI entry and enroll the config"
+  echo "    windows     Add Windows to Limine menu, or reboot to Windows immediately"
   echo "    status      Show Secure Boot status and file verification"
   echo "    sign        Reassert Limine settings, repair config drift, and sign EFI files"
   echo "    help        Show this help"
