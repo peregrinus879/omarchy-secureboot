@@ -90,6 +90,17 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 - Prefer minimal repo-owned automation over replacing Omarchy behavior. The repo fills dual-boot/Secure-Boot gaps; it should not compete with mkinitcpio, limine-entry-tool, or limine-snapper-sync.
 - Prefer the repo-owned watcher for non-pacman drift. Do not make `inotify-tools` a hard prerequisite.
 - Prefer `protocol: efi_boot_entry` over `protocol: efi` for Windows. The chainload protocol measures `limine_x64.efi` in TPM PCR, and `limine-snapper-sync` mutates that binary on every snapshot change, making PCR values unstable for BitLocker. The `efi_boot_entry` protocol triggers a firmware reboot, keeping `limine_x64.efi` out of the Windows boot measurement chain.
+- Do not remove `sign_all_efi()` from `cmd_sign()`. `zz-sbctl.hook` only re-signs files already in sbctl's database. `sign_all_efi()` discovers new files (especially snapshot UKIs from `limine-snapper-sync`) and registers them. That is the core gap this repo fills. Most files are "already signed" (skipped); it only does work for genuinely new files.
+- Do not move `apply_limine_secure_boot_settings` to setup-only. It is a cheap safety net (a few greps, no-op when correct) that catches settings overwritten by package updates or manual edits.
+- Do not remove `reenroll_limine_config_if_changed` from `cmd_sign()`. It fires only when this repo's own code changed `limine.conf` (e.g., `ensure_windows_boot_entry` restoring the Windows block). It does not duplicate `limine-snapper-sync`'s enrollment.
+- Do not remove enroll + sign calls from `add_windows_boot_entry()`. It is an interactive command, not triggered by hooks. When the user modifies `limine.conf` via the `windows` command, the enrollment + signing cycle must complete in the same invocation.
+- The pacman hook is not triple-signing. `zz-sbctl.hook` signs tracked files. `zzz-omarchy-secureboot.hook` discovers untracked ones. The watcher covers non-pacman drift. These are different scopes, not duplication.
+
+## Future Enhancements
+
+- **Remove sbctl 0.18 `save_sbctl_file_entry()` workaround**: When Arch upgrades sbctl past 0.18-1, `sbctl sign -s` should correctly save already-signed files to the database. At that point, remove `save_sbctl_file_entry()` from `sign.sh` and the direct database write path. Check with `pacman -Q sbctl`. As of 2026-04-11, Arch ships sbctl 0.18-1.
+- **Derive Limine `efi_boot_entry` name dynamically**: `find_windows_boot_entry()` currently strips device path info from `efibootmgr` output to extract the firmware entry label. If firmware or Windows updates ever change the label, the Limine menu entry would go stale. A future improvement could compare the `entry:` value in `limine.conf` against the current firmware label and rewrite if they differ. Not currently justified since the label has been stable across all known Windows UEFI installations.
+- **Improve `efibootmgr`-missing error messages**: `find_windows_boot_entry()` returns 1 if `efibootmgr` is missing, which callers report as "Windows Boot Manager not found." A future improvement could distinguish between missing tool and missing firmware entry. Low priority since `add_windows_boot_entry()` already checks for `efibootmgr` explicitly, and the automated paths (`ensure_windows_boot_entry`, `reboot_to_windows`) correctly fail soft.
 
 ## Conventions
 
