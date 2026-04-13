@@ -1,6 +1,6 @@
 # AGENTS.md - omarchy-secureboot
 
-Secure Boot setup tool for Omarchy (Arch Linux + Limine) with Windows dual-boot support.
+Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.
 
 ## Key Files
 

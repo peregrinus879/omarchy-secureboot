@@ -1,6 +1,6 @@
 # omarchy-secureboot
 
-**Secure Boot setup for [Omarchy](https://omarchy.com) with Windows dual-boot support.**
+**[Omarchy](https://omarchy.com) Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.**
 
 Creates signing keys, configures Limine for Omarchy's current Secure Boot model, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu via firmware BootNext handoff. After setup, sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files, a companion hook (`zzz-omarchy-secureboot.hook`) repairs package-triggered drift, and a repo-owned watcher repairs non-pacman boot drift.
 
