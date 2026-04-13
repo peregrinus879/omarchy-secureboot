@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# omarchy-secureboot - Secure Boot setup for Omarchy with Windows dual-boot support.
+# omarchy-secureboot - Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.
 # Ongoing maintenance handled by zz-sbctl.hook, zzz-omarchy-secureboot.hook,
 # and the repo-owned watcher for non-pacman boot drift.
 
@@ -100,8 +100,8 @@ cmd_status() {
 }
 
 cmd_help() {
-  header "Secure Boot for Omarchy"
-  echo "  Enable Secure Boot with Windows dual-boot support."
+  header "omarchy-secureboot"
+  echo "  Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff."
   echo -e "  After setup, ${DIM}zz-sbctl.hook${NC}, ${DIM}zzz-omarchy-secureboot.hook${NC}, and ${DIM}omarchy-secureboot-watcher.path${NC} keep Secure Boot state repaired."
   echo
   echo -e "  ${BOLD}Usage${NC}   sudo omarchy-secureboot <command>"
