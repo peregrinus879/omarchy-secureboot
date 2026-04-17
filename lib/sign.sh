@@ -126,10 +126,6 @@ ensure_limine_secure_boot_settings() {
   return 0
 }
 
-apply_limine_secure_boot_settings() {
-  ensure_limine_secure_boot_settings
-}
-
 # Regenerate Limine entries during setup or explicit rebuild flows.
 refresh_limine_config() {
   command -v limine-update >/dev/null 2>&1 || return 1
@@ -208,15 +204,24 @@ create_keys() {
 #   - Microsoft paths (trusted via -m enrollment flag)
 #   - BOOTIA32.EFI (32-bit, irrelevant on x86_64)
 clean_stale_entries() {
+  local entries rc=0
+  entries=$(list_enrolled_entries) || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    warn "Could not read sbctl tracking state; skipping stale entry cleanup"
+    return 0
+  fi
+
   local -a removable
-  mapfile -t removable < <(
-    list_enrolled_entries | while IFS=$'\t' read -r file output; do
-      output="${output:-$file}"
-      if [[ ! -e "$file" || ! -e "$output" || "$file" == */Microsoft/* || "$output" == */Microsoft/* || "$file" == *BOOTIA32.EFI || "$output" == *BOOTIA32.EFI ]]; then
-        printf '%s\n' "$file"
-      fi
-    done | sort -u
-  )
+  if [[ -n "$entries" ]]; then
+    mapfile -t removable < <(
+      echo "$entries" | while IFS=$'\t' read -r file output; do
+        output="${output:-$file}"
+        if [[ ! -e "$file" || ! -e "$output" || "$file" == */Microsoft/* || "$output" == */Microsoft/* || "$file" == *BOOTIA32.EFI || "$output" == *BOOTIA32.EFI ]]; then
+          printf '%s\n' "$file"
+        fi
+      done | sort -u
+    )
+  fi
   [[ ${#removable[@]} -eq 0 ]] && return 0
 
   qact "Cleaning ${#removable[@]} stale database entries"
@@ -248,7 +253,9 @@ save_sbctl_file_entry() {
 
   [[ -n "$db_json" && "$db_json" != "null" ]] || db_json="{}"
 
-  tmp=$(mktemp "/tmp/omarchy-secureboot.sbctl-files.XXXXXX") || {
+  local db_dir
+  db_dir=$(dirname "$files_db")
+  tmp=$(mktemp "${db_dir}/.omarchy-secureboot.sbctl-files.XXXXXX") || {
     [[ -z "$backup" ]] || discard_file_backup "$backup"
     return 1
   }
@@ -263,7 +270,14 @@ save_sbctl_file_entry() {
     return 1
   fi
 
-  if ! cp "$tmp" "$files_db"; then
+  # Preserve original permissions, or set default for first-create
+  if [[ -f "$files_db" ]]; then
+    chmod --reference="$files_db" "$tmp" 2>/dev/null || true
+  else
+    chmod 0644 "$tmp"
+  fi
+
+  if ! mv "$tmp" "$files_db"; then
     warn "Could not write ${files_db}"
     [[ -z "$backup" ]] || restore_file_backup "$backup" "$files_db" || true
     rm -f "$tmp"
@@ -271,7 +285,6 @@ save_sbctl_file_entry() {
     return 1
   fi
 
-  rm -f "$tmp"
   [[ -z "$backup" ]] || discard_file_backup "$backup"
   return 0
 }
@@ -280,9 +293,15 @@ save_sbctl_file_entry() {
 # Uses -s flag to register files in sbctl's database for zz-sbctl.hook.
 sign_all_efi() {
   local -a efi_files
-  local -a enrolled
+  local -a enrolled=()
+  local enrolled_raw rc=0
   mapfile -t efi_files < <(discover_efi_files)
-  mapfile -t enrolled < <(list_enrolled_paths)
+  enrolled_raw=$(list_enrolled_paths) || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    warn "Could not read sbctl tracking state; treating all files as untracked"
+  elif [[ -n "$enrolled_raw" ]]; then
+    mapfile -t enrolled <<< "$enrolled_raw"
+  fi
   [[ ${#efi_files[@]} -eq 0 ]] && die "No EFI files found in ${ESP}"
 
   local -A enrolled_map=()

@@ -34,6 +34,18 @@ qpass() { [[ "$QUIET" == true ]] || pass "$@"; }
 qact()  { [[ "$QUIET" == true ]] || act "$@"; }
 qheader() { [[ "$QUIET" == true ]] || header "$@"; }
 
+# --- Locking ----------------------------------------------------------------
+
+with_repair_lock() {
+  command -v flock >/dev/null 2>&1 \
+    || die "flock not installed. Run: ${BOLD}sudo pacman -S util-linux${NC}"
+  mkdir -p "$STATE_DIR"
+  exec 9>"${STATE_DIR}/repair.lock"
+  flock -w 30 9 || die "Could not acquire repair lock"
+}
+
+# --- File helpers -----------------------------------------------------------
+
 backup_file() {
   local file="$1" backup
   [[ -f "$file" ]] || return 1

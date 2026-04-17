@@ -46,6 +46,7 @@ resolve_sbctl_files_db() {
 }
 
 # Query tracked files through sbctl's public CLI.
+# Returns 0 on success (including empty), 1 on lookup failure.
 list_enrolled_entries_from_cli() {
   command -v sbctl >/dev/null 2>&1 || return 1
 
@@ -84,17 +85,27 @@ list_enrolled_entries_from_cli() {
 }
 
 # List file paths currently registered in sbctl's database.
+# Returns 0 on success (including empty), 1 on lookup failure.
+# CLI success with empty output is authoritative (no DB fallback).
+# DB fallback only triggers when CLI fails.
 list_enrolled_entries() {
-  local cli_entries
-  cli_entries=$(list_enrolled_entries_from_cli) || cli_entries=""
-  if [[ -n "$cli_entries" ]]; then
-    printf '%s\n' "$cli_entries"
+  local cli_entries cli_rc=0
+  cli_entries=$(list_enrolled_entries_from_cli) || cli_rc=$?
+
+  if [[ $cli_rc -eq 0 ]]; then
+    # CLI succeeded; result is authoritative even if empty
+    [[ -n "$cli_entries" ]] && printf '%s\n' "$cli_entries"
     return 0
   fi
 
-  local files_db json
-  files_db=$(resolve_sbctl_files_db) || return 0
-  json=$(<"$files_db") || return 0
+  # CLI failed; fall back to on-disk database
+  local files_db db_rc=0 json
+  files_db=$(resolve_sbctl_files_db) || db_rc=$?
+  if [[ $db_rc -ne 0 ]]; then
+    return 1
+  fi
+
+  json=$(<"$files_db") || return 1
 
   if [[ "$json" == "null" || -z "$json" ]]; then
     return 0
@@ -110,9 +121,18 @@ list_enrolled_entries() {
   ' 2>/dev/null
 }
 
+# Extract output file paths from enrolled entries.
+# Returns 0 on success (including empty), 1 on lookup failure.
 list_enrolled_paths() {
+  local entries rc=0
+  entries=$(list_enrolled_entries) || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    return 1
+  fi
+  [[ -z "$entries" ]] && return 0
+
   local file output
   while IFS=$'\t' read -r file output; do
     printf '%s\n' "${output:-$file}"
-  done < <(list_enrolled_entries)
+  done <<< "$entries"
 }

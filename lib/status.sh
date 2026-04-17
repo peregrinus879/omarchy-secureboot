@@ -50,6 +50,12 @@ show_status() {
 
   # Hook status
   echo
+  if [[ -f /etc/pacman.d/hooks/zz-omarchy-secureboot-cleanup.hook ]]; then
+    pass "zz-omarchy-secureboot-cleanup.hook present (stale entry cleanup)"
+  else
+    warn "zz-omarchy-secureboot-cleanup.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
+  fi
+
   if [[ -f /usr/share/libalpm/hooks/zz-sbctl.hook ]]; then
     pass "zz-sbctl.hook present (re-signing)"
   else
@@ -103,7 +109,7 @@ show_status() {
       else
         warn "limine-snapper-sync.service not active (${active_state:-unknown})"
         if ! command -v inotifywait >/dev/null 2>&1; then
-          echo -e "  ${DIM}Optional upstream watcher helper missing: ${BOLD}inotify-tools${NC}${DIM}. Repo watcher coverage does not depend on it.${NC}"
+          echo -e "  ${DIM}limine-snapper-sync's optional file watcher requires ${BOLD}inotify-tools${NC}${DIM} (not needed by this repo's watcher)${NC}"
         fi
       fi
     fi
@@ -174,16 +180,26 @@ show_status() {
   if [[ $EUID -eq 0 ]]; then
     echo
     echo -e "  ${BOLD}Tracked Files${NC}"
-    local -a enrolled
+    local -a enrolled=()
     local -a discovered
     local -a untracked=()
     local file is_signed
+    local enrolled_raw enrolled_rc=0
     declare -A enrolled_map=()
 
-    mapfile -t enrolled < <(list_enrolled_paths)
+    enrolled_raw=$(list_enrolled_paths) || enrolled_rc=$?
     mapfile -t discovered < <(discover_efi_files)
 
-    if [[ ${#enrolled[@]} -eq 0 ]]; then
+    if [[ $enrolled_rc -ne 0 ]]; then
+      fail "Could not read sbctl tracking state"
+      all_ok=false
+    elif [[ -n "$enrolled_raw" ]]; then
+      mapfile -t enrolled <<< "$enrolled_raw"
+    fi
+
+    if [[ $enrolled_rc -ne 0 ]]; then
+      : # already reported above
+    elif [[ ${#enrolled[@]} -eq 0 ]]; then
       warn "No files in sbctl database"
       [[ ${#discovered[@]} -eq 0 ]] || all_ok=false
     else

@@ -10,8 +10,6 @@ check_core_deps() {
     || die "sbctl not installed. Run: ${BOLD}sudo pacman -S sbctl${NC}"
   command -v jq >/dev/null 2>&1 \
     || die "jq not installed. Run: ${BOLD}sudo pacman -S jq${NC}"
-  command -v flock >/dev/null 2>&1 \
-    || die "flock not installed. Run: ${BOLD}sudo pacman -S util-linux${NC}"
 }
 
 check_deps() {
