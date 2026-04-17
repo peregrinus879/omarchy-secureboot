@@ -1,0 +1,22 @@
+# Omarchy Secure Boot: remove stale entries from sbctl's file database.
+# Runs before zz-sbctl.hook so sbctl sign-all does not fail on deleted files.
+# Mirrors zz-sbctl.hook's Path triggers to fire in the same transactions.
+
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = boot/*
+Target = efi/*
+Target = usr/lib/modules/*/vmlinuz
+Target = usr/lib/modules/*/extramodules/*
+Target = usr/lib/**/efi/*.efi*
+Target = usr/share/**/*.efi*
+
+[Action]
+Description = Secure Boot: clean stale sbctl entries
+When = PostTransaction
+Exec = @BINDIR@/omarchy-secureboot --quiet cleanup
+Depends = sbctl
+Depends = jq

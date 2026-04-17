@@ -37,7 +37,9 @@ update_windows_boot_entry() {
     return 1
   }
 
-  tmp=$(mktemp "/tmp/omarchy-secureboot.limine.conf.XXXXXX") || {
+  local conf_dir
+  conf_dir=$(dirname "$LIMINE_CONF")
+  tmp=$(mktemp "${conf_dir}/.omarchy-secureboot.limine.conf.XXXXXX") || {
     discard_file_backup "$backup"
     fail "Could not create temporary file for ${LIMINE_CONF}"
     return 1
@@ -90,7 +92,7 @@ update_windows_boot_entry() {
     return 1
   fi
 
-  if ! cp "$tmp" "$LIMINE_CONF"; then
+  if ! mv "$tmp" "$LIMINE_CONF"; then
     restore_file_backup "$backup" "$LIMINE_CONF" || true
     rm -f "$tmp"
     discard_file_backup "$backup"
@@ -98,7 +100,6 @@ update_windows_boot_entry() {
     return 1
   fi
 
-  rm -f "$tmp"
   discard_file_backup "$backup"
 }
 
@@ -130,6 +131,7 @@ add_windows_boot_entry() {
     return 1
   fi
 
+  with_repair_lock
   update_windows_boot_entry "$entry_name" || return 1
   enroll_limine_config || return 1
   sign_all_efi || warn "Some EFI files could not be re-signed"

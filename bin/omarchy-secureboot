@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # omarchy-secureboot - Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.
-# Ongoing maintenance handled by zz-sbctl.hook, zzz-omarchy-secureboot.hook,
-# and the repo-owned watcher for non-pacman boot drift.
+# Ongoing maintenance handled by zz-omarchy-secureboot-cleanup.hook, zz-sbctl.hook,
+# zzz-omarchy-secureboot.hook, and the repo-owned watcher for non-pacman boot drift.
 
 # Resolve lib directory (handles symlinks from /usr/local/bin -> /usr/local/lib)
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -16,12 +16,6 @@ for lib in common checks discover sign enroll windows status; do
   source "${LIB_DIR}/${lib}.sh"
 done
 
-with_repair_lock() {
-  mkdir -p "$STATE_DIR"
-  exec 9>"${STATE_DIR}/repair.lock"
-  flock -w 30 9 || die "Could not acquire repair lock"
-}
-
 # --- Commands ----------------------------------------------------------------
 
 cmd_setup() {
@@ -32,8 +26,9 @@ cmd_setup() {
   require_gum
 
   create_keys
+  with_repair_lock
 
-  apply_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
+  ensure_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
   refresh_limine_config || die "Could not regenerate Limine config"
 
   snapshot_limine_conf_hash
@@ -79,12 +74,19 @@ cmd_windows() {
   reboot_to_windows
 }
 
+cmd_cleanup() {
+  check_core_deps
+  check_root "cleanup"
+  with_repair_lock
+  clean_stale_entries
+}
+
 cmd_sign() {
   check_deps
   check_root "sign"
   with_repair_lock
   qheader "Signing EFI Files"
-  apply_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
+  ensure_limine_secure_boot_settings || die "Could not update Limine Secure Boot settings"
   snapshot_limine_conf_hash
   ensure_windows_boot_entry || true
   reenroll_limine_config_if_changed || die "Could not enroll Limine config checksum"
@@ -102,7 +104,8 @@ cmd_status() {
 cmd_help() {
   header "omarchy-secureboot"
   echo "  Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff."
-  echo -e "  After setup, ${DIM}zz-sbctl.hook${NC}, ${DIM}zzz-omarchy-secureboot.hook${NC}, and ${DIM}omarchy-secureboot-watcher.path${NC} keep Secure Boot state repaired."
+  echo -e "  After setup, ${DIM}zz-omarchy-secureboot-cleanup.hook${NC}, ${DIM}zz-sbctl.hook${NC}, ${DIM}zzz-omarchy-secureboot.hook${NC},"
+  echo -e "  and ${DIM}omarchy-secureboot-watcher.path${NC} keep Secure Boot state repaired."
   echo
   echo -e "  ${BOLD}Usage${NC}   sudo omarchy-secureboot <command>"
   echo
@@ -116,7 +119,7 @@ cmd_help() {
   echo "    version     Show version"
   echo
   echo -e "  ${DIM}Note:${NC} This tool keeps ${BOLD}ENABLE_VERIFICATION=no${NC} while using Limine config enrollment."
-  echo -e "        Package-triggered repair uses the pacman hook; non-pacman drift uses the repo watcher."
+  echo -e "        Package-triggered repair uses the pacman hooks; non-pacman drift uses the repo watcher."
   echo
   echo -e "  ${BOLD}Workflow${NC}"
   echo "    1. sudo omarchy-secureboot setup"
@@ -141,6 +144,7 @@ case "${1:-}" in
   setup)    cmd_setup ;;
   enroll)   cmd_enroll ;;
   windows)  cmd_windows ;;
+  cleanup)  cmd_cleanup ;;
   sign)     cmd_sign ;;
   status)   cmd_status ;;
   help|--help|-h)  cmd_help ;;

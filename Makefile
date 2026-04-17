@@ -11,6 +11,8 @@ install:
 	install -Dm755 bin/omarchy-secureboot $(DESTDIR)$(BINDIR)/omarchy-secureboot
 	install -Dm644 -t $(DESTDIR)$(LIBDIR)/ lib/*.sh
 	install -d $(DESTDIR)$(HOOKDIR)
+	sed 's|@BINDIR@|$(BINDIR)|g' hooks/zz-omarchy-secureboot-cleanup.hook > $(DESTDIR)$(HOOKDIR)/zz-omarchy-secureboot-cleanup.hook
+	chmod 644 $(DESTDIR)$(HOOKDIR)/zz-omarchy-secureboot-cleanup.hook
 	sed 's|@BINDIR@|$(BINDIR)|g' hooks/zzz-omarchy-secureboot.hook > $(DESTDIR)$(HOOKDIR)/zzz-omarchy-secureboot.hook
 	chmod 644 $(DESTDIR)$(HOOKDIR)/zzz-omarchy-secureboot.hook
 	install -d $(DESTDIR)$(SYSTEMDDIR)
@@ -32,6 +34,7 @@ uninstall:
 	fi
 	rm -f $(DESTDIR)$(BINDIR)/omarchy-secureboot
 	rm -rf $(DESTDIR)$(LIBDIR)
+	rm -f $(DESTDIR)$(HOOKDIR)/zz-omarchy-secureboot-cleanup.hook
 	rm -f $(DESTDIR)$(HOOKDIR)/zzz-omarchy-secureboot.hook
 	rm -f $(DESTDIR)$(SYSTEMDDIR)/omarchy-secureboot-watcher.service
 	rm -f $(DESTDIR)$(SYSTEMDDIR)/omarchy-secureboot-watcher.path

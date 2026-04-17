@@ -2,7 +2,7 @@
 
 **[Omarchy](https://omarchy.com) Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.**
 
-Creates signing keys, configures Limine for Omarchy's current Secure Boot model, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu via firmware BootNext handoff. After setup, sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files, a companion hook (`zzz-omarchy-secureboot.hook`) repairs package-triggered drift, and a repo-owned watcher repairs non-pacman boot drift.
+Creates signing keys, configures Limine for Omarchy's current Secure Boot model, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu via firmware BootNext handoff. After setup, a cleanup hook (`zz-omarchy-secureboot-cleanup.hook`) removes stale sbctl entries before sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files, a repair hook (`zzz-omarchy-secureboot.hook`) discovers new EFI files, and a repo-owned watcher repairs non-pacman boot drift.
 
 ## Why This Tool
 
@@ -75,6 +75,7 @@ sudo make install
 Installs to:
 - `/usr/local/bin/omarchy-secureboot`
 - `/usr/local/lib/omarchy-secureboot/`
+- `/etc/pacman.d/hooks/zz-omarchy-secureboot-cleanup.hook`
 - `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`
 - `/etc/systemd/system/omarchy-secureboot-watcher.service`
 - `/etc/systemd/system/omarchy-secureboot-watcher.path`
@@ -110,7 +111,7 @@ sudo omarchy-secureboot enroll
 sudo omarchy-secureboot windows
 ```
 
-The first run adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Subsequent runs set BootNext and reboot to Windows immediately. You can also select Windows from the Limine boot menu directly. The pacman hook handles package-triggered maintenance, and the watcher handles non-pacman boot drift automatically.
+The first run adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Subsequent runs set BootNext and reboot to Windows immediately. You can also select Windows from the Limine boot menu directly. The pacman hooks handle package-triggered maintenance, and the watcher handles non-pacman boot drift automatically.
 
 ## Commands
 
@@ -134,7 +135,7 @@ Shows Secure Boot state, hook status, Windows entry, and enrolled file verificat
 
 ### `sign`
 
-Repairs Linux-side Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, ensuring the Windows boot entry uses the `efi_boot_entry` protocol, re-enrolling the `limine.conf` checksum if the config changed, cleaning stale database entries, and signing all EFI files currently present on the ESP. Used manually, by the pacman hook, and by the repo watcher.
+Repairs Linux-side Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, ensuring the Windows boot entry uses the `efi_boot_entry` protocol, re-enrolling the `limine.conf` checksum if the config changed, cleaning stale database entries, and signing all EFI files currently present on the ESP. Used manually, by the pacman hooks, and by the repo watcher.
 
 ### `help`
 
@@ -173,17 +174,16 @@ Tracking reads use `sbctl list-files` first, then fall back to the on-disk sbctl
 
 ### Automatic Maintenance
 
-Package-triggered and non-pacman repair share the same lightweight `sign` path:
+Package-triggered repair uses a cleanup hook followed by the `sign` path; non-pacman repair uses the `sign` path directly:
 
 | Trigger | Scope | Purpose |
 |---|---|---|
-| `zz-sbctl.hook` (sbctl built-in) | All pacman transactions | Re-signs files already in sbctl's database |
+| `zz-omarchy-secureboot-cleanup.hook` (ours) | Same Path triggers as `zz-sbctl.hook` | Removes stale sbctl entries before sbctl re-signs |
+| `zz-sbctl.hook` (sbctl built-in) | Boot/EFI path changes | Re-signs files already in sbctl's database |
 | `zzz-omarchy-secureboot.hook` (ours) | `linux*`, `limine*`, `snapper*` packages | Runs lightweight repo repair after relevant package updates |
 | `omarchy-secureboot-watcher.path` (ours) | `/boot/limine.conf` and core EFI paths | Runs the same lightweight repair after non-pacman boot drift |
 
-The `zzz-` prefix ensures our hook runs after `zz-sbctl.hook` and after Limine-related tools have created or updated boot entries.
-
-Our hook triggers on packages matching `linux*`, `limine*`, or `snapper*`. Other package updates do not trigger it. `zz-sbctl.hook` triggers on all packages, so already-tracked files get re-signed on any pacman transaction. Outside pacman, the repo watcher covers the same repair path.
+Hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < `zz-sbctl` < `zzz-omarchy-secureboot`. The cleanup hook mirrors `zz-sbctl.hook`'s `Type = Path` triggers so it fires in the same transactions. The repair hook uses `Type = Package` triggers for `linux*`, `limine*`, and `snapper*`. Outside pacman, the repo watcher covers the same repair path.
 
 **Why this matters:** The current Omarchy stack works with three separate pieces:
 
@@ -205,7 +205,7 @@ This avoids BitLocker recovery caused by TPM PCR measurement drift. `limine-snap
 
 The `windows` command also provides a direct reboot-to-Windows path from Linux via `efibootmgr -n` (same firmware handoff, skips the Limine menu).
 
-If `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`, the Windows entry is lost. The pacman hook and repo watcher restore it automatically with the correct `efi_boot_entry` protocol. Any legacy `protocol: efi` entries are upgraded automatically by `sign`.
+If `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`, the Windows entry is lost. The pacman hooks and repo watcher restore it automatically with the correct `efi_boot_entry` protocol. Any legacy `protocol: efi` entries are upgraded automatically by `sign`.
 
 ### After Setup
 
@@ -215,6 +215,7 @@ The package-triggered maintenance chain:
 Kernel update
   -> mkinitcpio builds UKI
   -> limine-entry-tool updates limine.conf
+  -> zz-omarchy-secureboot-cleanup.hook removes stale sbctl entries
   -> zz-sbctl.hook re-signs UKI (already in database)
   -> zzz-omarchy-secureboot.hook ensures Windows boot entry and signs new files
 
@@ -225,6 +226,7 @@ Snapshot creation or cleanup
 
 Bootloader update
   -> Limine hook copies fresh bootloader files
+  -> zz-omarchy-secureboot-cleanup.hook removes stale sbctl entries
   -> zz-sbctl.hook re-signs bootloader files
   -> zzz-omarchy-secureboot.hook ensures Windows boot entry and signs new files
 ```
@@ -276,7 +278,7 @@ Re-enable Secure Boot after confirming all files verify.
 
 ### Snapshot fails to boot after kernel update
 
-Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs if you need an immediate manual repair. The pacman hook and watcher normally cover package-triggered and non-pacman drift automatically.
+Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs if you need an immediate manual repair. The pacman hooks and watcher normally cover package-triggered and non-pacman drift automatically.
 
 ### Limine panics about config checksum enrollment
 
@@ -286,13 +288,13 @@ This means Limine's Secure Boot config enrollment drifted out of sync after an u
 sudo omarchy-secureboot sign
 ```
 
-This restores the required `/etc/default/limine` settings, repairs repo-managed config drift, and re-enrolls the current config checksum. The pacman hook and watcher do this automatically in normal operation.
+This restores the required `/etc/default/limine` settings, repairs repo-managed config drift, and re-enrolls the current config checksum. The pacman hooks and watcher do this automatically in normal operation.
 
 ### `status` warns that `limine-snapper-sync.service` is not active
 
 This warning is informational. It refers to Omarchy's upstream snapshot watcher, not this repo's core commands.
 
-- Package-triggered repair still works through `zzz-omarchy-secureboot.hook`.
+- Package-triggered repair still works through `zz-omarchy-secureboot-cleanup.hook` and `zzz-omarchy-secureboot.hook`.
 - Repo watcher coverage still works through `omarchy-secureboot-watcher.path`.
 - Manual repair still works through `sudo omarchy-secureboot sign`.
 
@@ -310,7 +312,7 @@ If this still appears immediately after a successful `sign`, check `sudo sbctl l
 
 ### Windows disappeared from Limine boot menu
 
-This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`. The pacman hook and watcher restore the entry automatically with the correct `efi_boot_entry` protocol. To restore immediately:
+This happens when `omarchy-refresh-limine` or `limine-update` overwrites `limine.conf`. The pacman hooks and watcher restore the entry automatically with the correct `efi_boot_entry` protocol. To restore immediately:
 
 ```bash
 sudo omarchy-secureboot sign
@@ -376,22 +378,7 @@ Don't automate what's already automated. Fill the gaps that aren't.
 
 Current design: this repo owns both pacman-triggered maintenance and non-pacman boot-drift repair.
 
-### Session Notes
-
-The current design is deliberate:
-
-- keep Limine path verification disabled with `ENABLE_VERIFICATION=no`
-- keep Limine config enrollment enabled and refreshed automatically
-- use `protocol: efi_boot_entry` (firmware BootNext) for Windows, not `protocol: efi` (chainload), to avoid TPM PCR drift from `limine-snapper-sync` enrollment
-- treat snapshot filename SHA256 suffixes as limine-snapper-sync naming, not Limine path hashes
-- trust `sbctl list-files` first for tracked-file truth
-- keep direct sbctl database handling only for stale cleanup and the current `sbctl 0.18` save bug workaround
-- keep `sign` lightweight so automation repairs the current boot state instead of rebuilding it
-- do not make `inotify-tools` a hard dependency, because it belongs to upstream limine-snapper-sync watcher behavior, not this repo's core command set
-
-### Why `zz-sbctl.hook` works now
-
-sbctl's built-in pacman hook previously failed on Omarchy because it tried to sign `/boot/{machine-id}` (a directory) as a file. Omarchy has since moved to `CUSTOM_UKI_NAME="omarchy"`, which places UKIs at `/boot/EFI/Linux/omarchy_linux.efi` instead. The directory-as-file error no longer occurs, and `zz-sbctl.hook` correctly re-signs all files registered in its database via `sbctl sign-all`.
+`zz-sbctl.hook` works on Omarchy because UKIs now use `CUSTOM_UKI_NAME="omarchy"` and live at `/boot/EFI/Linux/omarchy_linux.efi`. Earlier Omarchy releases placed UKIs at `/boot/{machine-id}/`, which caused sbctl to try signing a directory. That no longer applies.
 
 ## License
 
