@@ -131,7 +131,7 @@ add_windows_boot_entry() {
     return 1
   fi
 
-  with_repair_lock
+  with_boot_repair_lock
   update_windows_boot_entry "$entry_name" || return 1
   enroll_limine_config || return 1
   sign_all_efi || warn "Some EFI files could not be re-signed"
@@ -146,7 +146,7 @@ add_windows_boot_entry() {
 
 # Ensure the Windows boot entry is present and uses the efi_boot_entry protocol.
 # Restores the entry if missing (when user previously opted in).
-# Upgrades from legacy protocol: efi to efi_boot_entry if needed.
+# Upgrades repo-managed protocol: efi entries to efi_boot_entry if needed.
 ensure_windows_boot_entry() {
   [[ -f "$LIMINE_CONF" ]] || return 0
 

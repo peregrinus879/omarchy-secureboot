@@ -5,7 +5,6 @@
 [Trigger]
 Operation = Install
 Operation = Upgrade
-Operation = Remove
 Type = Package
 Target = linux*
 Target = limine*

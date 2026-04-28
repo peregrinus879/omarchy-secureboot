@@ -1,12 +1,132 @@
 #!/bin/bash
 # omarchy-secureboot: status display and file verification
 
+strip_outer_quotes() {
+  local value="$1"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value=${value:1:${#value}-2}
+  fi
+  printf '%s\n' "$value"
+}
+
+limine_default_effective_value() {
+  local raw
+  raw=$(get_limine_default_raw "$1") || return 1
+  strip_outer_quotes "$raw"
+}
+
+limine_default_has_command() {
+  local value
+  value=$(limine_default_effective_value "$1") || return 1
+  [[ " $value " == *" $2 "* ]]
+}
+
+list_limine_unhashed_paths() {
+  [[ -f "$LIMINE_CONF" ]] || return 0
+
+  awk '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    BEGIN {
+      path_key["path"] = 1
+      path_key["kernel_path"] = 1
+      path_key["module_path"] = 1
+      path_key["image_path"] = 1
+      path_key["dtb_path"] = 1
+      path_key["global_dtb"] = 1
+      protocol = ""
+    }
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    /^\/+/{ protocol = ""; next }
+    {
+      line = trim($0)
+      colon = index(line, ":")
+      if (colon == 0) next
+
+      key = tolower(substr(line, 1, colon - 1))
+      value = trim(substr(line, colon + 1))
+
+      if (key == "protocol") {
+        protocol = tolower(value)
+        next
+      }
+
+      if (!(key in path_key)) next
+      if (protocol == "efi" || protocol == "efi_boot_entry") next
+      if (value !~ /#[0-9A-Fa-f]{128}([[:space:]]|$)/) {
+        print NR ": " key ": " value
+      }
+    }
+  ' "$LIMINE_CONF"
+}
+
+list_limine_v12_color_warnings() {
+  [[ -f "$LIMINE_CONF" ]] || return 0
+
+  awk '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    BEGIN {
+      color_key["interface_branding_color"] = 1
+      color_key["interface_branding_colour"] = 1
+      color_key["interface_help_color"] = 1
+      color_key["interface_help_colour"] = 1
+      color_key["interface_help_color_bright"] = 1
+      color_key["interface_help_colour_bright"] = 1
+    }
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      line = trim($0)
+      colon = index(line, ":")
+      if (colon == 0) next
+
+      key = tolower(substr(line, 1, colon - 1))
+      value = trim(substr(line, colon + 1))
+
+      if ((key in color_key) && value !~ /^[0-9A-Fa-f]{6}$/) {
+        print NR ": " key ": " value
+      }
+    }
+  ' "$LIMINE_CONF"
+}
+
+list_unmanaged_windows_chainloads() {
+  [[ -f "$LIMINE_CONF" ]] || return 0
+
+  awk '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    /^\/+/{ in_windows = (tolower($0) ~ /windows/); next }
+    in_windows {
+      line = trim($0)
+      colon = index(line, ":")
+      if (colon == 0) next
+
+      key = tolower(substr(line, 1, colon - 1))
+      value = tolower(trim(substr(line, colon + 1)))
+      if (key == "protocol" && value == "efi") {
+        print NR ": " line
+      }
+    }
+  ' "$LIMINE_CONF"
+}
+
 show_status() {
   header "Secure Boot Status"
   local all_ok=true
 
   # Parse sbctl status
-  local json
+  local json secure_boot_state="" setup_mode_state="" installed_state=""
   json=$(sbctl status --json 2>/dev/null) || true
 
   if [[ -z "$json" || "$json" == "null" ]]; then
@@ -14,8 +134,8 @@ show_status() {
     sbctl status
     echo
   else
-    local installed setup_mode secure_boot vendors
-    read -r installed setup_mode secure_boot < <(
+    local vendors
+    read -r installed_state setup_mode_state secure_boot_state < <(
       echo "$json" | jq -r '[.installed, .setup_mode, .secure_boot] | map(. // false) | @tsv'
     )
     vendors=$(echo "$json" | jq -r '
@@ -26,21 +146,21 @@ show_status() {
       end
     ')
 
-    if [[ "$installed" == "true" ]]; then
+    if [[ "$installed_state" == "true" ]]; then
       pass "sbctl keys installed"
     else
       fail "sbctl keys not installed"
       all_ok=false
     fi
 
-    if [[ "$secure_boot" == "true" ]]; then
+    if [[ "$secure_boot_state" == "true" ]]; then
       pass "Secure Boot enabled"
     else
       fail "Secure Boot disabled"
       all_ok=false
     fi
 
-    if [[ "$setup_mode" == "true" ]]; then
+    if [[ "$setup_mode_state" == "true" ]]; then
       warn "Setup Mode active"
     else
       pass "Setup Mode disabled"
@@ -68,27 +188,10 @@ show_status() {
     warn "zzz-omarchy-secureboot.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
   fi
 
-  if command -v systemctl >/dev/null 2>&1; then
-    local watcher_load_state watcher_enabled_state watcher_active_state
-    watcher_load_state=$(systemctl show -p LoadState --value omarchy-secureboot-watcher.path 2>/dev/null || true)
-    if [[ "$watcher_load_state" == "loaded" ]]; then
-      watcher_enabled_state=$(systemctl is-enabled omarchy-secureboot-watcher.path 2>/dev/null || true)
-      watcher_active_state=$(systemctl is-active omarchy-secureboot-watcher.path 2>/dev/null || true)
-
-      if [[ "$watcher_enabled_state" == "enabled" ]]; then
-        pass "omarchy-secureboot-watcher.path enabled"
-      else
-        warn "omarchy-secureboot-watcher.path not enabled (${watcher_enabled_state:-unknown})"
-      fi
-
-      if [[ "$watcher_active_state" == "active" ]]; then
-        pass "omarchy-secureboot-watcher.path active"
-      else
-        warn "omarchy-secureboot-watcher.path not active (${watcher_active_state:-unknown})"
-      fi
-    else
-      warn "omarchy-secureboot-watcher.path missing. Run: ${BOLD}sudo make install${NC} from repo"
-    fi
+  if [[ -x /etc/boot/hooks/post.d/zzz-omarchy-secureboot-sign ]]; then
+    pass "zzz-omarchy-secureboot-sign present (Limine post-repair)"
+  else
+    warn "zzz-omarchy-secureboot-sign missing. Run: ${BOLD}sudo make install${NC} from repo"
   fi
 
   if command -v systemctl >/dev/null 2>&1; then
@@ -109,50 +212,126 @@ show_status() {
       else
         warn "limine-snapper-sync.service not active (${active_state:-unknown})"
         if ! command -v inotifywait >/dev/null 2>&1; then
-          echo -e "  ${DIM}limine-snapper-sync's optional file watcher requires ${BOLD}inotify-tools${NC}${DIM} (not needed by this repo's watcher)${NC}"
+          echo -e "  ${DIM}limine-snapper-sync's optional file watcher requires ${BOLD}inotify-tools${NC}${DIM} (not needed by this repo's Limine post-hook)${NC}"
         fi
       fi
     fi
   fi
 
   echo
+  echo -e "  ${BOLD}ESP Mount${NC}"
+  if command -v mountpoint >/dev/null 2>&1 && command -v findmnt >/dev/null 2>&1; then
+    local esp_fstype=""
+    read -r esp_fstype < <(findmnt -n -T "$ESP" -o FSTYPE 2>/dev/null || true)
+    if mountpoint -q "$ESP" && [[ "$esp_fstype" == "vfat" ]]; then
+      pass "${ESP} mounted as vfat"
+    else
+      fail "${ESP} is not mounted as the FAT32 ESP (${esp_fstype:-not mounted})"
+      all_ok=false
+    fi
+  else
+    warn "mountpoint/findmnt unavailable; cannot verify ${ESP} mount"
+  fi
+
+  echo
   echo -e "  ${BOLD}Limine Config${NC}"
   if [[ -f /etc/default/limine ]]; then
-    if grep -qx 'ENABLE_VERIFICATION=no' /etc/default/limine 2>/dev/null; then
+    local enable_verification enable_verification_count
+    enable_verification=$(limine_default_effective_value "ENABLE_VERIFICATION")
+    enable_verification_count=${_limine_default_count:-0}
+    if [[ "$enable_verification" == "no" ]]; then
       pass "ENABLE_VERIFICATION=no"
     else
       fail "ENABLE_VERIFICATION is not set to no"
       all_ok=false
     fi
+    if [[ $enable_verification_count -gt 1 ]]; then
+      warn "ENABLE_VERIFICATION appears multiple times; sign will collapse it to one effective value"
+    fi
 
-    if grep -qx 'ENABLE_ENROLL_LIMINE_CONFIG=yes' /etc/default/limine 2>/dev/null; then
+    local enable_enroll enable_enroll_count
+    enable_enroll=$(limine_default_effective_value "ENABLE_ENROLL_LIMINE_CONFIG")
+    enable_enroll_count=${_limine_default_count:-0}
+    if [[ "$enable_enroll" == "yes" ]]; then
       pass "ENABLE_ENROLL_LIMINE_CONFIG=yes"
     else
       fail "ENABLE_ENROLL_LIMINE_CONFIG is missing"
       all_ok=false
     fi
-
-    local cmd_before
-    cmd_before=$(grep -m1 '^COMMANDS_BEFORE_SAVE=' /etc/default/limine 2>/dev/null | cut -d= -f2-)
-    if [[ -n "$cmd_before" ]] && echo "$cmd_before" | tr -d '"' | grep -qw 'limine-reset-enroll'; then
-      pass "COMMANDS_BEFORE_SAVE includes limine-reset-enroll"
-    else
-      fail "COMMANDS_BEFORE_SAVE is missing limine-reset-enroll"
-      all_ok=false
+    if [[ $enable_enroll_count -gt 1 ]]; then
+      warn "ENABLE_ENROLL_LIMINE_CONFIG appears multiple times; sign will collapse it to one effective value"
     fi
 
-    local cmd_after
-    cmd_after=$(grep -m1 '^COMMANDS_AFTER_SAVE=' /etc/default/limine 2>/dev/null | cut -d= -f2-)
-    if [[ -n "$cmd_after" ]] && echo "$cmd_after" | tr -d '"' | grep -qw 'limine-enroll-config'; then
-      pass "COMMANDS_AFTER_SAVE includes limine-enroll-config"
+    if limine_enrollment_hooks_present; then
+      pass "Limine enrollment hooks present"
+      if limine_default_has_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll" \
+        || limine_default_has_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"; then
+        warn "deprecated COMMANDS_* enrollment entries remain; run ${BOLD}sudo omarchy-secureboot sign${NC} to clean them"
+      fi
     else
-      fail "COMMANDS_AFTER_SAVE is missing limine-enroll-config"
-      all_ok=false
+      warn "Limine enrollment hooks missing; checking deprecated COMMANDS_* fallback"
+      if limine_default_has_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll"; then
+        pass "COMMANDS_BEFORE_SAVE includes limine-reset-enroll"
+      else
+        fail "COMMANDS_BEFORE_SAVE is missing limine-reset-enroll fallback"
+        all_ok=false
+      fi
+
+      if limine_default_has_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"; then
+        pass "COMMANDS_AFTER_SAVE includes limine-enroll-config"
+      else
+        fail "COMMANDS_AFTER_SAVE is missing limine-enroll-config fallback"
+        all_ok=false
+      fi
+    fi
+
+    local limine_major="" limine_ver=""
+    limine_ver=$(limine_version 2>/dev/null || true)
+    limine_major=$(limine_major_version 2>/dev/null || true)
+    if [[ -n "$limine_ver" ]]; then
+      pass "Limine ${limine_ver} installed"
+    fi
+
+    if [[ -n "$limine_major" && $limine_major -ge 12 ]]; then
+      local color_warnings unhashed_paths
+      color_warnings=$(list_limine_v12_color_warnings)
+      if [[ -n "$color_warnings" ]]; then
+        warn "Limine 12 expects interface colors as RRGGBB values"
+        while IFS= read -r line; do
+          echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
+        done <<< "$color_warnings"
+      fi
+
+      if [[ "$secure_boot_state" == "true" && "$enable_enroll" == "yes" ]]; then
+        unhashed_paths=$(list_limine_unhashed_paths)
+        if [[ -n "$unhashed_paths" ]]; then
+          fail "Limine 12 Secure Boot path-hash enforcement may block boot"
+          while IFS= read -r line; do
+            echo -e "    ${RED}✗${NC} ${LIMINE_CONF}:${line}"
+          done <<< "$unhashed_paths"
+          all_ok=false
+        else
+          pass "Limine 12 path-hash check passed for non-EFI loaded paths"
+        fi
+      else
+        echo -e "  ${DIM}Limine 12 path-hash enforcement inactive unless Secure Boot and config enrollment are both active${NC}"
+      fi
     fi
   else
     fail "/etc/default/limine not found"
     all_ok=false
   fi
+
+  local shadow_config
+  for shadow_config in \
+    "${ESP}/EFI/limine/limine.conf" \
+    "${ESP}/EFI/BOOT/limine.conf" \
+    "${ESP}/EFI/arch-limine/limine.conf" \
+    "${ESP}/limine/limine.conf"; do
+    if [[ -f "$shadow_config" ]]; then
+      warn "Possible Limine config shadowing file: ${shadow_config}"
+    fi
+  done
 
   # Windows boot path
   if efibootmgr -v 2>/dev/null | grep -qi 'bootmgfw\.efi'; then
@@ -174,6 +353,16 @@ show_status() {
     else
       echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add)${NC}"
     fi
+  fi
+
+  local unmanaged_windows_chainloads
+  unmanaged_windows_chainloads=$(list_unmanaged_windows_chainloads)
+  if [[ -n "$unmanaged_windows_chainloads" ]]; then
+    warn "Unmanaged Windows protocol: efi chainload entry may trigger BitLocker"
+    while IFS= read -r line; do
+      echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
+    done <<< "$unmanaged_windows_chainloads"
+    echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add the firmware BootNext entry, then remove any duplicate chainload entry if needed.${NC}"
   fi
 
   # Tracked files (root only)
@@ -231,8 +420,8 @@ show_status() {
         for file in "${untracked[@]}"; do
           echo -e "    ${YELLOW}!${NC} $file"
         done
-        if printf '%s\n' "${untracked[@]}" | grep -q '\.efi_sha256_'; then
-          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. The watcher should repair this automatically; run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} if you need an immediate manual repair.${NC}"
+        if printf '%s\n' "${untracked[@]}" | grep -Eq '\.efi_(sha1|sha256|b3|blake3|xxh|xxhash)_'; then
+          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. The Limine post-hook should repair this after upstream boot updates; run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} if you need an immediate manual repair.${NC}"
         fi
         all_ok=false
       fi

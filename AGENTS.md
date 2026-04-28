@@ -7,8 +7,9 @@ Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows 
 - `README.md` - User documentation, design philosophy, troubleshooting
 - `bin/omarchy-secureboot` - Entry point and command dispatcher
 - `lib/*.sh` - Modular function libraries (common, checks, discover, sign, enroll, windows, status)
-- `hooks/zz-omarchy-secureboot-cleanup.hook` - Pacman hook that removes stale sbctl entries before `zz-sbctl.hook` runs
-- `hooks/zzz-omarchy-secureboot.hook` - Pacman hook that runs `sign` after kernel, bootloader, or snapshot-related package updates
+- `pacman-hooks/zz-omarchy-secureboot-cleanup.hook` - Pacman hook that removes stale sbctl entries before `zz-sbctl.hook` runs
+- `pacman-hooks/zzz-omarchy-secureboot.hook` - Pacman hook that runs `sign` after kernel, bootloader, or snapshot-related package updates
+- `limine-hooks/zzz-omarchy-secureboot-sign` - Limine post-hook that runs `sign` after upstream Limine tools mutate boot files
 - `Makefile` - Install/uninstall targets
 
 ## Architecture
@@ -72,31 +73,31 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 
 ## Technical Notes
 
-- **Snapshot UKI naming**: limine-snapper-sync creates snapshot UKIs with the pattern `filename.efi_sha256_[64-hex-chars]`. The SHA256 suffix is part of the filename, not a Limine `path: ...#hash` suffix.
-- **Limine Secure Boot model**: `setup` and `sign` ensure `ENABLE_VERIFICATION=no`, `ENABLE_ENROLL_LIMINE_CONFIG=yes`, `COMMANDS_BEFORE_SAVE` contains `limine-reset-enroll`, and `COMMANDS_AFTER_SAVE` contains `limine-enroll-config`. This repo signs EFI binaries with sbctl while keeping Limine path verification disabled and limine.conf checksum enrollment enabled.
+- **Snapshot UKI naming**: limine-snapper-sync creates snapshot UKIs with filename hash suffixes such as `filename.efi_sha256_[64-hex-chars]`, `filename.efi_sha1_*`, `filename.efi_b3_*`, or `filename.efi_xxh_*`. The hash suffix is part of the filename, not a Limine `path: ...#hash` suffix.
+- **Limine Secure Boot model**: `setup` and `sign` ensure `ENABLE_VERIFICATION=no` and `ENABLE_ENROLL_LIMINE_CONFIG=yes`. Current Limine packages provide `/etc/boot/hooks/pre.d/10-limine-reset-enroll` and `/etc/boot/hooks/post.d/90-limine-enroll-config`. This repo signs EFI binaries with sbctl while keeping Omarchy's current path-hash generation disabled and limine.conf checksum enrollment enabled.
+- **Limine 12 compatibility**: Limine 12 can enforce BLAKE2B hashes on non-EFI loaded paths when Secure Boot and config checksum enrollment are both active. Omarchy currently boots UKIs via `protocol: efi`, which is exempt because firmware Secure Boot verifies EFI binaries. Do not add automatic path-hash rewriting unless Omarchy moves to non-EFI loaded paths or explicitly enables that model. `status` should warn instead.
 - **EFI entry handling**: Omarchy boots UKIs via `protocol: efi`. Windows uses `protocol: efi_boot_entry`, which sets firmware BootNext and triggers a reboot so Windows boots directly from `bootmgfw.efi` without going through `limine_x64.efi`. This avoids TPM PCR drift caused by `limine-snapper-sync` re-enrolling `limine_x64.efi` on every snapshot change. Detection uses `efibootmgr -v` matching on the `bootmgfw.efi` loader path, not label. The `windows` command also provides a direct `efibootmgr -n` reboot path from Linux.
 - **Command split**: `cmd_setup()` is the full provisioning path and may regenerate Limine-managed boot state. `cmd_sign()` must stay lightweight and repair the current boot state without calling `limine-update` or rebuilding UKIs.
 - **Signing-last invariant**: both `cmd_setup()` and `cmd_sign()` must always run `sign_all_efi()` as the final mutation step. Any repo-managed `limine.conf` change or Limine config re-enrollment must happen before signing so the final signed state matches the repaired boot state.
 - **Tracked-file source of truth**: prefer `sbctl list-files` over direct database parsing. Use direct database access only as fallback and for cleanup/compatibility logic.
 - **sbctl 0.18 compatibility**: Arch's `sbctl 0.18-1` still ignores `sign -s` for already-signed files. Snapshot UKIs can therefore be signed but untracked. `sign.sh` works around this by writing the expected `SigningEntry` directly into sbctl's file database when needed.
-- **sbctl database preference**: when fallback database access is needed, prefer `files.db` over legacy `files.json`. Older states can still leave `files.json` behind.
+- **sbctl database preference**: when fallback database access is needed, prefer `files.db` over `files.json`.
 - **Pacman hook ordering dependency**: the cleanup hook (`zz-omarchy-secureboot-cleanup.hook`) relies on filename sort order to run before sbctl's `zz-sbctl.hook`. Pacman orders PostTransaction hooks alphabetically: `zz-omarchy-secureboot-cleanup` < `zz-sbctl` < `zzz-omarchy-secureboot` (because `o` < `s`, and `zzz` > `zz`). The cleanup hook mirrors `zz-sbctl.hook`'s `Type = Path` triggers so it fires in the same transactions. Other `zz-*` hooks may sort between them; the invariant is only "before `zz-sbctl`", not "adjacent to it." If upstream sbctl ever renames its hook, `status` will flag the missing `zz-sbctl.hook` and the cleanup hook filename may need adjustment.
-- **Pacman vs non-pacman scope**: package-triggered repair runs a cleanup hook (stale entry removal) before the `sign` path. Non-pacman repair uses the `sign` path directly via the watcher.
-- **inotify-tools**: optional upstream watcher helper only. Do not treat it as a core dependency for this repo.
+- **Pacman vs Limine hook scope**: package-triggered repair runs a cleanup hook (stale entry removal) before the `sign` path. Limine-originated boot drift uses `/etc/boot/hooks/post.d/zzz-omarchy-secureboot-sign`, which runs the `sign` path after upstream Limine tools finish writing boot files.
 - **sbctl `-g` flag risk**: `zz-sbctl.hook` runs `sbctl sign-all -g`. The `-g` flag tells sbctl to generate/rebuild UKI bundles. With `CUSTOM_UKI_NAME="omarchy"` and limine-entry-tool building UKIs (limine-entry-tool disabled its own `sb_sign()` since v1.24.0-2), the `-g` flag should be a no-op. If it causes issues, the fallback is replacing `zz-sbctl.hook` with a custom hook that runs `sbctl sign-all` without `-g`.
 
 ## Decision Rationale
 
-- Do not reintroduce Limine `path: ...#hash` management while Omarchy's working stack still depends on `ENABLE_VERIFICATION=no`.
+- Do not reintroduce Limine `path: ...#hash` management while Omarchy's working stack still depends on `ENABLE_VERIFICATION=no` and UKI EFI paths. For Limine 12, warn on incompatible non-EFI paths rather than mutating them automatically.
 - Do not add repo migration code unless multiple deployed installs require it. For this project, a one-user local transition did not justify permanent migration logic.
 - Prefer minimal repo-owned automation over replacing Omarchy behavior. The repo fills dual-boot/Secure-Boot gaps; it should not compete with mkinitcpio, limine-entry-tool, or limine-snapper-sync.
-- Prefer the repo-owned watcher for non-pacman drift. Do not make `inotify-tools` a hard prerequisite.
+- Prefer the Limine post-hook for Limine-originated drift.
 - Prefer `protocol: efi_boot_entry` over `protocol: efi` for Windows. The chainload protocol measures `limine_x64.efi` in TPM PCR, and `limine-snapper-sync` mutates that binary on every snapshot change, making PCR values unstable for BitLocker. The `efi_boot_entry` protocol triggers a firmware reboot, keeping `limine_x64.efi` out of the Windows boot measurement chain.
 - Do not remove `sign_all_efi()` from `cmd_sign()`. `zz-sbctl.hook` only re-signs files already in sbctl's database. `sign_all_efi()` discovers new files (especially snapshot UKIs from `limine-snapper-sync`) and registers them. That is the core gap this repo fills. Most files are "already signed" (skipped); it only does work for genuinely new files.
 - Do not move `ensure_limine_secure_boot_settings` to setup-only. It is a cheap safety net (a few greps, no-op when correct) that catches settings overwritten by package updates or manual edits.
 - Do not remove `reenroll_limine_config_if_changed` from `cmd_sign()`. It fires only when this repo's own code changed `limine.conf` (e.g., `ensure_windows_boot_entry` restoring the Windows block). It does not duplicate `limine-snapper-sync`'s enrollment.
 - Do not remove enroll + sign calls from `add_windows_boot_entry()`. It is an interactive command, not triggered by hooks. When the user modifies `limine.conf` via the `windows` command, the enrollment + signing cycle must complete in the same invocation.
-- The pacman hooks are not redundant. `zz-omarchy-secureboot-cleanup.hook` removes stale entries so `zz-sbctl.hook` does not fail on deleted files. `zz-sbctl.hook` signs tracked files. `zzz-omarchy-secureboot.hook` discovers untracked ones. The watcher covers non-pacman drift. These are different scopes, not duplication.
+- The hooks are not redundant. `zz-omarchy-secureboot-cleanup.hook` removes stale entries so `zz-sbctl.hook` does not fail on deleted files. `zz-sbctl.hook` signs tracked files. `zzz-omarchy-secureboot.hook` discovers untracked ones after relevant package transactions. `zzz-omarchy-secureboot-sign` covers Limine-originated boot drift after `limine-update` or `limine-snapper-sync`. These are different scopes, not duplication.
 
 ## Future Enhancements
 

@@ -1,6 +1,0 @@
-[Unit]
-Description=Repair Omarchy Secure Boot state after boot file changes
-
-[Service]
-Type=oneshot
-ExecStart=@BINDIR@/omarchy-secureboot --quiet sign
