@@ -3,22 +3,61 @@
 
 readonly LIMINE_DEFAULT_CONF="/etc/default/limine"
 
+get_limine_default_raw() {
+  local key="$1" line raw=""
+  _limine_default_count=0
+
+  while IFS= read -r line; do
+    _limine_default_count=$((_limine_default_count + 1))
+    raw=${line#*=}
+  done < <(grep "^${key}=" "$LIMINE_DEFAULT_CONF" 2>/dev/null || true)
+
+  printf '%s\n' "$raw"
+}
+
+replace_limine_default_entry() {
+  local key="$1" desired="${2:-}" tmp
+  tmp=$(mktemp "${LIMINE_DEFAULT_CONF}.XXXXXX") || return 2
+
+  if ! awk -v key="$key" -v desired="$desired" '
+    BEGIN { written = 0 }
+    index($0, key "=") == 1 {
+      if (desired != "" && !written) {
+        print desired
+        written = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (desired != "" && !written) {
+        print desired
+      }
+    }
+  ' "$LIMINE_DEFAULT_CONF" > "$tmp"; then
+    rm -f "$tmp"
+    return 2
+  fi
+
+  chmod --reference="$LIMINE_DEFAULT_CONF" "$tmp" 2>/dev/null || true
+  mv "$tmp" "$LIMINE_DEFAULT_CONF" || {
+    rm -f "$tmp"
+    return 2
+  }
+}
+
 # Set or replace a simple key=value entry in /etc/default/limine.
 # Returns 0 if the file changed, 1 if it was already correct, 2 on failure.
 set_limine_default_value() {
-  local key="$1" value="$2"
-  local desired="${key}=${value}"
+  local key="$1" value="$2" raw desired
+  desired="${key}=${value}"
 
-  grep -qxF "$desired" "$LIMINE_DEFAULT_CONF" 2>/dev/null && return 1
-
-  if grep -q "^${key}=" "$LIMINE_DEFAULT_CONF" 2>/dev/null; then
-    local escaped
-    escaped=$(printf '%s' "$desired" | sed 's/[&|]/\\&/g') || return 2
-    sed -i "s|^${key}=.*|${escaped}|" "$LIMINE_DEFAULT_CONF" || return 2
-  else
-    printf '%s\n' "$desired" >> "$LIMINE_DEFAULT_CONF" || return 2
+  raw=$(get_limine_default_raw "$key") || return 2
+  if [[ ${_limine_default_count:-0} -eq 1 && "$raw" == "$value" ]]; then
+    return 1
   fi
-  return 0
+
+  replace_limine_default_entry "$key" "$desired"
 }
 
 # Ensure a space-delimited command is present in COMMANDS_* without
@@ -26,13 +65,13 @@ set_limine_default_value() {
 # Returns 0 if the file changed, 1 if already correct, 2 on failure.
 ensure_limine_default_command() {
   local key="$1" command="$2"
-  local raw current desired escaped
+  local raw current desired
 
-  raw=$(grep -m1 "^${key}=" "$LIMINE_DEFAULT_CONF" 2>/dev/null | cut -d= -f2- || true)
+  raw=$(get_limine_default_raw "$key") || return 2
 
   if [[ -z "$raw" ]]; then
-    printf '%s="%s"\n' "$key" "$command" >> "$LIMINE_DEFAULT_CONF" || return 2
-    return 0
+    replace_limine_default_entry "$key" "${key}=\"${command}\""
+    return $?
   fi
 
   current="$raw"
@@ -40,22 +79,64 @@ ensure_limine_default_command() {
     current=${current:1:${#current}-2}
   fi
 
-  [[ " $current " == *" $command "* ]] && return 1
-
-  if [[ -n "$current" ]]; then
+  if [[ " $current " == *" $command "* ]]; then
+    [[ ${_limine_default_count:-0} -eq 1 ]] && return 1
+    desired="${key}=\"${current}\""
+  elif [[ -n "$current" ]]; then
     desired="${key}=\"${current} ${command}\""
   else
     desired="${key}=\"${command}\""
   fi
 
-  escaped=$(printf '%s' "$desired" | sed 's/[&|]/\\&/g') || return 2
-  sed -i "s|^${key}=.*|${escaped}|" "$LIMINE_DEFAULT_CONF" || return 2
-  return 0
+  replace_limine_default_entry "$key" "$desired"
 }
 
-# Ensure Limine is configured for the current Omarchy Secure Boot model:
+# Remove a repo-managed command token from COMMANDS_* when Limine's hook
+# mechanism is available. Returns 0 if changed, 1 if already clean, 2 on failure.
+remove_limine_default_command() {
+  local key="$1" command="$2"
+  local raw current word desired="" changed=1
+
+  raw=$(get_limine_default_raw "$key") || return 2
+  [[ ${_limine_default_count:-0} -gt 0 ]] || return 1
+
+  current="$raw"
+  if [[ "$current" == \"*\" && "$current" == *\" ]]; then
+    current=${current:1:${#current}-2}
+  fi
+
+  for word in $current; do
+    if [[ "$word" == "$command" ]]; then
+      changed=0
+      continue
+    fi
+    if [[ -n "$desired" ]]; then
+      desired="${desired} ${word}"
+    else
+      desired="$word"
+    fi
+  done
+
+  if [[ $changed -ne 0 && ${_limine_default_count:-0} -eq 1 ]]; then
+    return 1
+  fi
+
+  if [[ -n "$desired" ]]; then
+    replace_limine_default_entry "$key" "${key}=\"${desired}\""
+  else
+    replace_limine_default_entry "$key"
+  fi
+}
+
+limine_enrollment_hooks_present() {
+  [[ -x /etc/boot/hooks/pre.d/10-limine-reset-enroll \
+    && -x /etc/boot/hooks/post.d/90-limine-enroll-config ]]
+}
+
+# Ensure Limine is configured for Omarchy's current Secure Boot model:
 # signed EFI binaries, enrolled limine.conf checksum, and disabled Limine
-# path verification so stale path hashes do not block boot after signing.
+# path-hash generation. Limine >= 12 may still enforce path hashes
+# when Secure Boot and config enrollment are both active; status reports that.
 ensure_limine_secure_boot_settings() {
   [[ -f "$LIMINE_DEFAULT_CONF" ]] || {
     fail "${LIMINE_DEFAULT_CONF} not found"
@@ -93,26 +174,50 @@ ensure_limine_secure_boot_settings() {
     return 1
   fi
 
-  ensure_limine_default_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll"
-  rc=$?
-  if [[ $rc -eq 0 ]]; then
-    changed=0
-  elif [[ $rc -ne 1 ]]; then
-    restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
-    discard_file_backup "$backup"
-    fail "Could not update COMMANDS_BEFORE_SAVE in ${LIMINE_DEFAULT_CONF}"
-    return 1
-  fi
+  if limine_enrollment_hooks_present; then
+    remove_limine_default_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      changed=0
+    elif [[ $rc -ne 1 ]]; then
+      restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+      discard_file_backup "$backup"
+      fail "Could not remove deprecated COMMANDS_BEFORE_SAVE entry in ${LIMINE_DEFAULT_CONF}"
+      return 1
+    fi
 
-  ensure_limine_default_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"
-  rc=$?
-  if [[ $rc -eq 0 ]]; then
-    changed=0
-  elif [[ $rc -ne 1 ]]; then
-    restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
-    discard_file_backup "$backup"
-    fail "Could not update COMMANDS_AFTER_SAVE in ${LIMINE_DEFAULT_CONF}"
-    return 1
+    remove_limine_default_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      changed=0
+    elif [[ $rc -ne 1 ]]; then
+      restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+      discard_file_backup "$backup"
+      fail "Could not remove deprecated COMMANDS_AFTER_SAVE entry in ${LIMINE_DEFAULT_CONF}"
+      return 1
+    fi
+  else
+    ensure_limine_default_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      changed=0
+    elif [[ $rc -ne 1 ]]; then
+      restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+      discard_file_backup "$backup"
+      fail "Could not update COMMANDS_BEFORE_SAVE in ${LIMINE_DEFAULT_CONF}"
+      return 1
+    fi
+
+    ensure_limine_default_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+      changed=0
+    elif [[ $rc -ne 1 ]]; then
+      restore_file_backup "$backup" "$LIMINE_DEFAULT_CONF" || true
+      discard_file_backup "$backup"
+      fail "Could not update COMMANDS_AFTER_SAVE in ${LIMINE_DEFAULT_CONF}"
+      return 1
+    fi
   fi
 
   discard_file_backup "$backup"

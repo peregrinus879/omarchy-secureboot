@@ -20,8 +20,24 @@ check_deps() {
     || die "limine-enroll-config not installed. Update: ${BOLD}limine-mkinitcpio-hook${NC}"
   command -v limine-reset-enroll >/dev/null 2>&1 \
     || die "limine-reset-enroll not installed. Update: ${BOLD}limine-mkinitcpio-hook${NC}"
+  check_esp_mount
+}
+
+check_esp_mount() {
+  command -v mountpoint >/dev/null 2>&1 \
+    || die "mountpoint not installed. Run: ${BOLD}sudo pacman -S util-linux${NC}"
+  command -v findmnt >/dev/null 2>&1 \
+    || die "findmnt not installed. Run: ${BOLD}sudo pacman -S util-linux${NC}"
+
   [[ -d "${ESP}/EFI" ]] \
     || die "${ESP}/EFI not found. Is the EFI partition mounted?"
+  mountpoint -q "$ESP" \
+    || die "${ESP} is not a mountpoint. Refusing to modify a stale ESP directory."
+
+  local fstype=""
+  read -r fstype < <(findmnt -n -T "$ESP" -o FSTYPE 2>/dev/null || true)
+  [[ "$fstype" == "vfat" ]] \
+    || die "${ESP} is mounted as ${fstype:-unknown}, expected vfat/FAT32 ESP"
 }
 
 check_efi_mode() {

@@ -4,7 +4,16 @@
 # Find all signable EFI files under the ESP.
 # Excludes Microsoft files (trusted via -m enrollment), 32-bit bootloader, backups.
 discover_efi_files() {
-  find "${ESP}" -type f \( -name "*.efi" -o -name "*.EFI" -o -name "*.efi_sha256_*" \) \
+  find "${ESP}" -type f \( \
+    -name "*.efi" -o \
+    -name "*.EFI" -o \
+    -name "*.efi_sha1_*" -o \
+    -name "*.efi_sha256_*" -o \
+    -name "*.efi_b3_*" -o \
+    -name "*.efi_blake3_*" -o \
+    -name "*.efi_xxh_*" -o \
+    -name "*.efi_xxhash_*" \
+  \) \
     ! -path "*/Microsoft/*" \
     ! -name "BOOTIA32.EFI" \
     ! -name "*.bak" \
@@ -25,17 +34,20 @@ resolve_sbctl_files_db_path() {
     return 0
   fi
 
-  if [[ -f /var/lib/sbctl/files.db || ! -e /var/lib/sbctl/files.json ]]; then
-    printf '%s\n' "/var/lib/sbctl/files.db"
-    return 0
-  fi
+  local candidate
+  for candidate in \
+    /var/lib/sbctl/files.db \
+    /var/lib/sbctl/files.json \
+    /usr/share/secureboot/files.db \
+    /usr/share/secureboot/files.json; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
 
-  if [[ -f /var/lib/sbctl/files.json || ! -e /var/lib/sbctl/files.db ]]; then
-    printf '%s\n' "/var/lib/sbctl/files.json"
-    return 0
-  fi
-
-  return 1
+  printf '%s\n' "/var/lib/sbctl/files.db"
+  return 0
 }
 
 resolve_sbctl_files_db() {

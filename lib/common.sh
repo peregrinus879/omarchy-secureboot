@@ -8,6 +8,7 @@ readonly ESP="/boot"
 readonly LIMINE_CONF="${ESP}/limine.conf"
 # shellcheck disable=SC2034 # Used by sourced lib files.
 readonly STATE_DIR="/var/lib/omarchy-secureboot"
+readonly LIMINE_LOCK_FILE="/tmp/limine-global.lock"
 
 # --- Colors ------------------------------------------------------------------
 
@@ -42,6 +43,35 @@ with_repair_lock() {
   mkdir -p "$STATE_DIR"
   exec 9>"${STATE_DIR}/repair.lock"
   flock -w 30 9 || die "Could not acquire repair lock"
+}
+
+with_limine_lock() {
+  [[ "${OMARCHY_SECUREBOOT_IN_LIMINE_HOOK:-}" == true ]] && return 0
+
+  command -v flock >/dev/null 2>&1 \
+    || die "flock not installed. Run: ${BOLD}sudo pacman -S util-linux${NC}"
+  exec 8>"$LIMINE_LOCK_FILE"
+  flock -w 30 8 || die "Could not acquire Limine global lock"
+}
+
+with_boot_repair_lock() {
+  with_limine_lock
+  with_repair_lock
+}
+
+limine_version() {
+  command -v limine >/dev/null 2>&1 || return 1
+
+  local output
+  output=$(limine --version 2>/dev/null) || return 1
+  [[ "$output" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]] || return 1
+  printf '%s.%s.%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+}
+
+limine_major_version() {
+  local version
+  version=$(limine_version) || return 1
+  printf '%s\n' "${version%%.*}"
 }
 
 # --- File helpers -----------------------------------------------------------
