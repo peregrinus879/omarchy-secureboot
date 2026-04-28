@@ -10,14 +10,14 @@ strip_outer_quotes() {
 }
 
 limine_default_effective_value() {
-  local raw
-  raw=$(get_limine_default_raw "$1") || return 1
-  strip_outer_quotes "$raw"
+  load_limine_default_entry "$1" || return 1
+  strip_outer_quotes "${_limine_default_raw:-}"
 }
 
 limine_default_has_command() {
   local value
-  value=$(limine_default_effective_value "$1") || return 1
+  load_limine_default_entry "$1" || return 1
+  value=$(strip_outer_quotes "${_limine_default_raw:-}") || return 1
   [[ " $value " == *" $2 "* ]]
 }
 
@@ -237,7 +237,8 @@ show_status() {
   echo -e "  ${BOLD}Limine Config${NC}"
   if [[ -f /etc/default/limine ]]; then
     local enable_verification enable_verification_count
-    enable_verification=$(limine_default_effective_value "ENABLE_VERIFICATION")
+    load_limine_default_entry "ENABLE_VERIFICATION"
+    enable_verification=$(strip_outer_quotes "${_limine_default_raw:-}")
     enable_verification_count=${_limine_default_count:-0}
     if [[ "$enable_verification" == "no" ]]; then
       pass "ENABLE_VERIFICATION=no"
@@ -250,7 +251,8 @@ show_status() {
     fi
 
     local enable_enroll enable_enroll_count
-    enable_enroll=$(limine_default_effective_value "ENABLE_ENROLL_LIMINE_CONFIG")
+    load_limine_default_entry "ENABLE_ENROLL_LIMINE_CONFIG"
+    enable_enroll=$(strip_outer_quotes "${_limine_default_raw:-}")
     enable_enroll_count=${_limine_default_count:-0}
     if [[ "$enable_enroll" == "yes" ]]; then
       pass "ENABLE_ENROLL_LIMINE_CONFIG=yes"

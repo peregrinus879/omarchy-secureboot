@@ -3,8 +3,9 @@
 
 readonly LIMINE_DEFAULT_CONF="/etc/default/limine"
 
-get_limine_default_raw() {
+load_limine_default_entry() {
   local key="$1" line raw=""
+  _limine_default_raw=""
   _limine_default_count=0
 
   while IFS= read -r line; do
@@ -12,7 +13,12 @@ get_limine_default_raw() {
     raw=${line#*=}
   done < <(grep "^${key}=" "$LIMINE_DEFAULT_CONF" 2>/dev/null || true)
 
-  printf '%s\n' "$raw"
+  _limine_default_raw="$raw"
+}
+
+get_limine_default_raw() {
+  load_limine_default_entry "$1" || return 1
+  printf '%s\n' "${_limine_default_raw:-}"
 }
 
 replace_limine_default_entry() {
@@ -52,7 +58,8 @@ set_limine_default_value() {
   local key="$1" value="$2" raw desired
   desired="${key}=${value}"
 
-  raw=$(get_limine_default_raw "$key") || return 2
+  load_limine_default_entry "$key" || return 2
+  raw=${_limine_default_raw:-}
   if [[ ${_limine_default_count:-0} -eq 1 && "$raw" == "$value" ]]; then
     return 1
   fi
@@ -67,7 +74,8 @@ ensure_limine_default_command() {
   local key="$1" command="$2"
   local raw current desired
 
-  raw=$(get_limine_default_raw "$key") || return 2
+  load_limine_default_entry "$key" || return 2
+  raw=${_limine_default_raw:-}
 
   if [[ -z "$raw" ]]; then
     replace_limine_default_entry "$key" "${key}=\"${command}\""
@@ -97,7 +105,8 @@ remove_limine_default_command() {
   local key="$1" command="$2"
   local raw current word desired="" changed=1
 
-  raw=$(get_limine_default_raw "$key") || return 2
+  load_limine_default_entry "$key" || return 2
+  raw=${_limine_default_raw:-}
   [[ ${_limine_default_count:-0} -gt 0 ]] || return 1
 
   current="$raw"
