@@ -131,7 +131,7 @@ First run: detects the Windows Boot Manager in firmware boot entries (by `bootmg
 
 ### `status`
 
-Shows Secure Boot state, ESP mount state, hook status, Limine 12 readiness diagnostics, Windows entry, and enrolled file verification. Works without root for basic info; requires root for file verification.
+Shows Secure Boot state, ESP mount state, hook status, Limine 12 readiness diagnostics for path hashes and interface colors, Windows entry, and enrolled file verification. Works without root for basic info; requires root for file verification.
 
 ### `sign`
 
@@ -193,7 +193,7 @@ Pacman hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < 
 
 **Why config enrollment is required:** Limine protects Secure Boot systems by embedding the checksum of `limine.conf` into the Limine EFI binary. Any time `limine.conf` changes, the checksum must be re-enrolled with `limine-enroll-config`. This enrollment mutates `limine_x64.efi`, which is why Windows must boot via firmware BootNext (not chainload) to avoid TPM PCR measurement drift.
 
-**Why path hashes are not managed here:** Limine also supports `path: ...#<blake2b>` suffixes, but Omarchy's current working state uses `ENABLE_VERIFICATION=no` and boots UKIs through EFI paths, which Limine 12 exempts from path-hash enforcement. Snapshot filenames such as `omarchy_linux.efi_sha256_<hex>` come from `limine-snapper-sync`; that SHA256 is part of the filename, not a Limine `path:` hash suffix. If future Omarchy entries load non-EFI paths under Limine 12 Secure Boot enforcement, `status` will flag missing BLAKE2B suffixes.
+**Why path hashes are not managed here:** Limine also supports `path: ...#<blake2b>` suffixes, but Omarchy's current working state uses `ENABLE_VERIFICATION=no` and boots UKIs through EFI paths, which Limine 12 exempts from path-hash enforcement. Snapshot filenames such as `omarchy_linux.efi_sha256_<hex>` come from `limine-snapper-sync`; that SHA256 is part of the filename, not a Limine `path:` hash suffix. If future Omarchy entries load non-EFI paths under Limine 12 Secure Boot enforcement, `status` will flag missing BLAKE2B suffixes before and after the Limine 12 upgrade.
 
 **Why the repo does not rely only on sbctl internals:** Older sbctl states and migrations have used both `files.json` and `files.db`, while the public `sbctl list-files` CLI reflects the authoritative tracked set that hooks actually use. This repo therefore reads tracking state from the CLI first, and only falls back to the database for cleanup and compatibility logic.
 
@@ -205,7 +205,7 @@ This avoids BitLocker recovery caused by TPM PCR measurement drift. `limine-snap
 
 The `windows` command also provides a direct reboot-to-Windows path from Linux via `efibootmgr -n` (same firmware handoff, skips the Limine menu).
 
-If `omarchy-refresh-limine`, `limine-update`, or `limine-snapper-sync` overwrites `limine.conf`, the Windows entry can be lost. The pacman hooks and Limine post-hook restore the repo-managed entry automatically with the correct `efi_boot_entry` protocol. `status` also warns about unmanaged Windows `protocol: efi` chainload entries that may still need manual cleanup.
+If `omarchy-refresh-limine`, `limine-update`, or `limine-snapper-sync` overwrites `limine.conf`, the Windows entry can be lost. The pacman hooks and Limine post-hook restore the repo-managed entry automatically with the correct `efi_boot_entry` protocol. `status` also warns about unmanaged Windows EFI chainload entries (`protocol: efi`, `efi_chainload`, or `uefi`) that may still need manual cleanup.
 
 ### After Setup
 
@@ -323,11 +323,55 @@ sudo omarchy-secureboot sign
 
 For repo-managed Windows entries, run `sudo omarchy-secureboot sign` to restore the `protocol: efi_boot_entry` block. The managed entry uses firmware BootNext, which avoids BitLocker recovery by keeping `limine_x64.efi` out of the Windows boot measurement chain.
 
-If `status` reports an unmanaged Windows `protocol: efi` entry, add the managed BootNext entry with `sudo omarchy-secureboot windows`, then remove any duplicate chainload entry manually if Omarchy's bootloader scan left one behind.
+If `status` reports an unmanaged Windows EFI chainload entry, add the managed BootNext entry with `sudo omarchy-secureboot windows`, then remove any duplicate chainload entry manually if Omarchy's bootloader scan left one behind.
 
 ### `status` warns about Limine 12 path hashes
 
 Limine 12 enforces BLAKE2B hashes on non-EFI loaded paths when Secure Boot is active and a config checksum is enrolled. Omarchy's current UKI entries use EFI paths, which Limine 12 exempts because firmware Secure Boot verifies those EFI binaries. If future entries use non-EFI path values such as `path:`, `module_path:`, `kernel_path:`, `image_path:`, `dtb_path:`, or `global_dtb:` without `#<blake2b>`, `status` flags them before they can cause a Secure Boot panic.
+
+### `status` warns about Limine 12 colors
+
+Limine 12 changed interface color options from 0-7 color indexes to `RRGGBB` hex values. If `status` flags an old value such as:
+
+```text
+interface_branding_color: 2
+```
+
+Replace it in `/boot/limine.conf` with a hex color, then re-enroll and sign:
+
+```bash
+sudo cp -a /boot/limine.conf "/boot/limine.conf.bak.$(date +%Y%m%d-%H%M%S)"
+sudo sed -i 's/^interface_branding_color: 2$/interface_branding_color: 9ece6a/' /boot/limine.conf
+sudo limine-enroll-config
+sudo omarchy-secureboot sign
+```
+
+`9ece6a` matches Omarchy's Tokyo Night green accent. If `omarchy-refresh-limine` restores the old value later, rerun the same replacement or update Omarchy's source default before refreshing Limine.
+
+### Windows runs a disk check on boot
+
+Windows `Scanning and repairing drive` or `chkdsk` is separate from BitLocker recovery. This repo uses firmware BootNext for Windows and does not mount or modify Windows NTFS volumes, so repeated disk checks usually mean Windows has set the NTFS dirty bit, had an interrupted shutdown/update, or saw a Fast Startup/hibernation state.
+
+From Linux, check for duplicate or unmanaged Windows boot paths and whether Windows partitions are mounted:
+
+```bash
+sudo omarchy-secureboot status
+sudo efibootmgr -v | grep -i 'bootmgfw\.efi'
+findmnt -t ntfs3,ntfs,fuseblk
+grep -nA4 -B2 'omarchy-secureboot:windows\|protocol: efi\|protocol: efi_chainload\|protocol: uefi\|bootmgfw' /boot/limine.conf
+```
+
+From Windows Admin PowerShell or Command Prompt, check the dirty bit and recent disk-check logs:
+
+```powershell
+fsutil dirty query C:
+chkntfs C:
+chkdsk C: /scan
+Get-WinEvent -FilterHashtable @{LogName="Application"; ProviderName="Wininit"} -MaxEvents 5 | Format-List TimeCreated,Message
+Get-WinEvent -FilterHashtable @{LogName="Application"; ProviderName="Chkdsk"} -MaxEvents 5 | Format-List TimeCreated,Message
+```
+
+If Windows reports the volume is dirty, repair it from Windows with `chkdsk C: /f` and let it run at the next Windows boot. Avoid mounting Windows NTFS partitions read-write from Linux. If the issue repeats and you do not need Windows hibernation, disable Fast Startup/hibernation from Windows with `powercfg /h off`.
 
 ### `windows` says Windows Boot Manager not found
 

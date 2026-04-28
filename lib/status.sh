@@ -25,10 +25,40 @@ list_limine_unhashed_paths() {
   [[ -f "$LIMINE_CONF" ]] || return 0
 
   awk '
+    function normalise_protocol(value) {
+      value = tolower(value)
+      if (value == "uefi" || value == "efi_chainload") return "efi"
+      if (value == "bios_chainload") return "bios"
+      return value
+    }
+
     function trim(value) {
       sub(/^[[:space:]]+/, "", value)
       sub(/[[:space:]]+$/, "", value)
       return value
+    }
+    function has_hash(value) {
+      return value ~ /#[0-9A-Fa-f]{128}([[:space:]]|$)/
+    }
+    function reset_entry() {
+      protocol = ""
+      path_count = 0
+    }
+    function remember_path(key, value, line_no) {
+      if (!has_hash(value)) {
+        path_count++
+        path_lines[path_count] = line_no ": " key ": " value
+      }
+    }
+    function flush_entry(    i) {
+      if (protocol == "efi" || protocol == "efi_boot_entry") {
+        reset_entry()
+        return
+      }
+      for (i = 1; i <= path_count; i++) {
+        print path_lines[i]
+      }
+      reset_entry()
     }
     BEGIN {
       path_key["path"] = 1
@@ -36,11 +66,10 @@ list_limine_unhashed_paths() {
       path_key["module_path"] = 1
       path_key["image_path"] = 1
       path_key["dtb_path"] = 1
-      path_key["global_dtb"] = 1
-      protocol = ""
+      reset_entry()
     }
     /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
-    /^\/+/{ protocol = ""; next }
+    /^\/+/{ flush_entry(); next }
     {
       line = trim($0)
       colon = index(line, ":")
@@ -50,16 +79,19 @@ list_limine_unhashed_paths() {
       value = trim(substr(line, colon + 1))
 
       if (key == "protocol") {
-        protocol = tolower(value)
+        protocol = normalise_protocol(value)
+        next
+      }
+
+      if (key == "global_dtb") {
+        if (!has_hash(value)) print NR ": " key ": " value
         next
       }
 
       if (!(key in path_key)) next
-      if (protocol == "efi" || protocol == "efi_boot_entry") next
-      if (value !~ /#[0-9A-Fa-f]{128}([[:space:]]|$)/) {
-        print NR ": " key ": " value
-      }
+      remember_path(key, value, NR)
     }
+    END { flush_entry() }
   ' "$LIMINE_CONF"
 }
 
@@ -100,6 +132,12 @@ list_unmanaged_windows_chainloads() {
   [[ -f "$LIMINE_CONF" ]] || return 0
 
   awk '
+    function normalise_protocol(value) {
+      value = tolower(value)
+      if (value == "uefi" || value == "efi_chainload") return "efi"
+      return value
+    }
+
     function trim(value) {
       sub(/^[[:space:]]+/, "", value)
       sub(/[[:space:]]+$/, "", value)
@@ -113,7 +151,7 @@ list_unmanaged_windows_chainloads() {
       if (colon == 0) next
 
       key = tolower(substr(line, 1, colon - 1))
-      value = tolower(trim(substr(line, colon + 1)))
+      value = normalise_protocol(trim(substr(line, colon + 1)))
       if (key == "protocol" && value == "efi") {
         print NR ": " line
       }
@@ -294,30 +332,39 @@ show_status() {
       pass "Limine ${limine_ver} installed"
     fi
 
+    local color_warnings unhashed_paths limine_v12_or_newer=false
     if [[ -n "$limine_major" && $limine_major -ge 12 ]]; then
-      local color_warnings unhashed_paths
-      color_warnings=$(list_limine_v12_color_warnings)
-      if [[ -n "$color_warnings" ]]; then
-        warn "Limine 12 expects interface colors as RRGGBB values"
-        while IFS= read -r line; do
-          echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
-        done <<< "$color_warnings"
-      fi
+      limine_v12_or_newer=true
+    fi
 
-      if [[ "$secure_boot_state" == "true" && "$enable_enroll" == "yes" ]]; then
-        unhashed_paths=$(list_limine_unhashed_paths)
-        if [[ -n "$unhashed_paths" ]]; then
+    color_warnings=$(list_limine_v12_color_warnings)
+    if [[ -n "$color_warnings" ]]; then
+      warn "Limine 12 expects interface colors as RRGGBB values"
+      while IFS= read -r line; do
+        echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
+      done <<< "$color_warnings"
+    fi
+
+    if [[ "$enable_enroll" == "yes" ]]; then
+      unhashed_paths=$(list_limine_unhashed_paths)
+      if [[ -n "$unhashed_paths" ]]; then
+        if [[ "$limine_v12_or_newer" == true && "$secure_boot_state" == "true" ]]; then
           fail "Limine 12 Secure Boot path-hash enforcement may block boot"
           while IFS= read -r line; do
             echo -e "    ${RED}✗${NC} ${LIMINE_CONF}:${line}"
           done <<< "$unhashed_paths"
           all_ok=false
         else
-          pass "Limine 12 path-hash check passed for non-EFI loaded paths"
+          warn "Limine 12 readiness: non-EFI loaded paths are missing BLAKE2B hashes"
+          while IFS= read -r line; do
+            echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
+          done <<< "$unhashed_paths"
         fi
       else
-        echo -e "  ${DIM}Limine 12 path-hash enforcement inactive unless Secure Boot and config enrollment are both active${NC}"
+        pass "Limine 12 path-hash readiness passed for non-EFI loaded paths"
       fi
+    else
+      echo -e "  ${DIM}Limine 12 path-hash enforcement inactive unless config enrollment is active${NC}"
     fi
   else
     fail "/etc/default/limine not found"
@@ -360,7 +407,7 @@ show_status() {
   local unmanaged_windows_chainloads
   unmanaged_windows_chainloads=$(list_unmanaged_windows_chainloads)
   if [[ -n "$unmanaged_windows_chainloads" ]]; then
-    warn "Unmanaged Windows protocol: efi chainload entry may trigger BitLocker"
+    warn "Unmanaged Windows EFI chainload entry may trigger BitLocker"
     while IFS= read -r line; do
       echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
     done <<< "$unmanaged_windows_chainloads"
