@@ -29,9 +29,9 @@ sbctl, jq, gum (interactive only). Omarchy provides the rest (`limine-update`, `
 
 ## Reference Repos
 
-Cloned under `~/projects/repos/references/`:
-- `~/projects/repos/references/omarchy/` - Omarchy source (boot chain, Limine config, install scripts)
-- `~/projects/repos/references/omarchy-pkgs/` - Package builds (limine-mkinitcpio-hook, limine-snapper-sync)
+Cloned under `~/Projects/repos/references/`:
+- `~/Projects/repos/references/omarchy/` - Omarchy source (boot chain, Limine config, install scripts)
+- `~/Projects/repos/references/omarchy-pkgs/` - Package builds (limine-mkinitcpio-hook, limine-snapper-sync)
 
 ## Reference Docs
 
