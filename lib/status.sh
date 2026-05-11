@@ -159,6 +159,24 @@ list_unmanaged_windows_chainloads() {
   ' "$LIMINE_CONF"
 }
 
+list_windows_firmware_entries() {
+  command -v efibootmgr >/dev/null 2>&1 || return 0
+  efibootmgr -v 2>/dev/null | grep -i 'bootmgfw\.efi' || true
+}
+
+list_omarchy_direct_boot_entries() {
+  command -v efibootmgr >/dev/null 2>&1 || return 0
+  efibootmgr -v 2>/dev/null | grep -Ei '^Boot[0-9A-Fa-f]+\*?[[:space:]]+Omarchy.*\\EFI\\Linux\\omarchy.*\.efi' || true
+}
+
+count_nonempty_lines() {
+  local count=0 line
+  while IFS= read -r line; do
+    [[ -z "$line" ]] || count=$((count + 1))
+  done <<< "$1"
+  printf '%s\n' "$count"
+}
+
 show_status() {
   header "Secure Boot Status"
   local all_ok=true
@@ -382,9 +400,28 @@ show_status() {
     fi
   done
 
+  local direct_boot_entries
+  direct_boot_entries=$(list_omarchy_direct_boot_entries)
+  if [[ -n "$direct_boot_entries" ]]; then
+    warn "Omarchy Direct Boot firmware entry enabled"
+    while IFS= read -r line; do
+      echo -e "    ${YELLOW}!${NC} ${line}"
+    done <<< "$direct_boot_entries"
+    echo -e "  ${DIM}Direct Boot bypasses the Limine menu, including snapshots and repo-managed Windows entries.${NC}"
+  fi
+
   # Windows boot path
-  if efibootmgr -v 2>/dev/null | grep -qi 'bootmgfw\.efi'; then
+  local windows_boot_entries windows_boot_count
+  windows_boot_entries=$(list_windows_firmware_entries)
+  windows_boot_count=$(count_nonempty_lines "$windows_boot_entries")
+  if [[ $windows_boot_count -gt 0 ]]; then
     pass "Windows Boot Manager in firmware boot entries"
+    if [[ $windows_boot_count -gt 1 ]]; then
+      warn "Multiple Windows Boot Manager firmware entries found"
+      while IFS= read -r line; do
+        echo -e "    ${YELLOW}!${NC} ${line}"
+      done <<< "$windows_boot_entries"
+    fi
   else
     echo -e "  ${DIM}No Windows Boot Manager found (check BIOS boot settings)${NC}"
   fi
@@ -423,10 +460,26 @@ show_status() {
     local -a untracked=()
     local file is_signed
     local enrolled_raw enrolled_rc=0
+    local stale_entries stale_rc=0 stale_file stale_output
     declare -A enrolled_map=()
+    local -a missing_tracked=()
 
     enrolled_raw=$(list_enrolled_paths) || enrolled_rc=$?
+    stale_entries=$(list_stale_sbctl_entries) || stale_rc=$?
     mapfile -t discovered < <(discover_efi_files)
+
+    if [[ $stale_rc -eq 0 && -n "$stale_entries" ]]; then
+      while IFS=$'\t' read -r stale_file stale_output; do
+        stale_output="${stale_output:-$stale_file}"
+        if [[ ! -e "$stale_file" || ! -e "$stale_output" ]]; then
+          if [[ "$stale_file" == "$stale_output" ]]; then
+            missing_tracked+=("$stale_file")
+          else
+            missing_tracked+=("$stale_file -> $stale_output")
+          fi
+        fi
+      done <<< "$stale_entries"
+    fi
 
     if [[ $enrolled_rc -ne 0 ]]; then
       fail "Could not read sbctl tracking state"
@@ -475,6 +528,19 @@ show_status() {
         all_ok=false
       fi
 
+    fi
+
+    if [[ $enrolled_rc -eq 0 && ${#missing_tracked[@]} -gt 0 ]]; then
+      echo
+      warn "Stale sbctl tracked files found"
+      for stale_file in "${missing_tracked[@]}"; do
+        echo -e "    ${YELLOW}!${NC} $stale_file"
+      done
+      echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot cleanup${NC}${DIM} or ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} before the next package transaction.${NC}"
+      all_ok=false
+    fi
+
+    if [[ $enrolled_rc -eq 0 && ${#enrolled[@]} -gt 0 ]]; then
       echo
       if $all_ok; then
         pass "All tracked files signed and all discovered EFI files enrolled"

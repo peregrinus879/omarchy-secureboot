@@ -76,6 +76,7 @@ cmd_windows() {
 cmd_cleanup() {
   check_core_deps
   check_root "cleanup"
+  check_esp_mount
   with_repair_lock
   clean_stale_entries
 }
@@ -114,6 +115,7 @@ cmd_help() {
   echo "    windows     Add Windows to Limine menu (first run) or reboot to Windows (after)"
   echo "    status      Show Secure Boot status and file verification"
   echo "    sign        Reassert Limine settings, repair config drift, and sign EFI files"
+  echo "    cleanup     Remove stale sbctl tracked-file entries"
   echo "    help        Show this help"
   echo "    version     Show version"
   echo

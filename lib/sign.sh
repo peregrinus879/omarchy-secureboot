@@ -313,33 +313,54 @@ create_keys() {
   qpass "Signing keys created"
 }
 
+sbctl_entry_should_be_removed() {
+  local file="$1" output="${2:-$1}"
+
+  [[ ! -e "$file" || ! -e "$output" \
+    || "$file" == */Microsoft/* || "$output" == */Microsoft/* \
+    || "$file" == *BOOTIA32.EFI || "$output" == *BOOTIA32.EFI ]]
+}
+
+list_stale_sbctl_entries() {
+  local entries rc=0
+  entries=$(list_enrolled_entries_for_cleanup) || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    return 1
+  fi
+
+  if [[ -n "$entries" ]]; then
+    printf '%s\n' "$entries" | while IFS=$'\t' read -r file output; do
+      output="${output:-$file}"
+      if sbctl_entry_should_be_removed "$file" "$output"; then
+        printf '%s\t%s\n' "$file" "$output"
+      fi
+    done | sort -u
+  fi
+}
+
 # Remove stale entries from sbctl's database:
 #   - files no longer on disk
 #   - Microsoft paths (trusted via -m enrollment flag)
 #   - BOOTIA32.EFI (32-bit, irrelevant on x86_64)
 clean_stale_entries() {
-  local entries rc=0
-  entries=$(list_enrolled_entries) || rc=$?
+  local stale rc=0
+  stale=$(list_stale_sbctl_entries) || rc=$?
   if [[ $rc -ne 0 ]]; then
     warn "Could not read sbctl tracking state; skipping stale entry cleanup"
     return 0
   fi
 
-  local -a removable
-  if [[ -n "$entries" ]]; then
-    mapfile -t removable < <(
-      echo "$entries" | while IFS=$'\t' read -r file output; do
-        output="${output:-$file}"
-        if [[ ! -e "$file" || ! -e "$output" || "$file" == */Microsoft/* || "$output" == */Microsoft/* || "$file" == *BOOTIA32.EFI || "$output" == *BOOTIA32.EFI ]]; then
-          printf '%s\n' "$file"
-        fi
-      done | sort -u
-    )
+  local -a removable=()
+  local file output
+  if [[ -n "$stale" ]]; then
+    while IFS=$'\t' read -r file output; do
+      removable+=("$file")
+    done <<< "$stale"
   fi
+
   [[ ${#removable[@]} -eq 0 ]] && return 0
 
   qact "Cleaning ${#removable[@]} stale database entries"
-  local file
   for file in "${removable[@]}"; do
     if sbctl remove-file "$file" >/dev/null 2>&1; then
       qpass "${file#"${ESP}"/}"

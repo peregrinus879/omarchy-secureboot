@@ -96,21 +96,10 @@ list_enrolled_entries_from_cli() {
   ' 2>/dev/null
 }
 
-# List file paths currently registered in sbctl's database.
-# Returns 0 on success (including empty), 1 on lookup failure.
-# CLI success with empty output is authoritative (no DB fallback).
-# DB fallback only triggers when CLI fails.
-list_enrolled_entries() {
-  local cli_entries cli_rc=0
-  cli_entries=$(list_enrolled_entries_from_cli) || cli_rc=$?
-
-  if [[ $cli_rc -eq 0 ]]; then
-    # CLI succeeded; result is authoritative even if empty
-    [[ -n "$cli_entries" ]] && printf '%s\n' "$cli_entries"
-    return 0
-  fi
-
-  # CLI failed; fall back to on-disk database
+# Query tracked files from sbctl's on-disk database. This is a fallback path
+# for stale-entry cleanup and sbctl compatibility logic, not the primary source
+# of truth for normal status checks.
+list_enrolled_entries_from_db() {
   local files_db db_rc=0 json
   files_db=$(resolve_sbctl_files_db) || db_rc=$?
   if [[ $db_rc -ne 0 ]]; then
@@ -131,6 +120,43 @@ list_enrolled_entries() {
     | [(.file // .output_file), (.output_file // .file)]
     | @tsv
   ' 2>/dev/null
+}
+
+# List file paths currently registered in sbctl's database.
+# Returns 0 on success (including empty), 1 on lookup failure.
+# CLI success with empty output is authoritative (no DB fallback).
+# DB fallback only triggers when CLI fails.
+list_enrolled_entries() {
+  local cli_entries cli_rc=0
+  cli_entries=$(list_enrolled_entries_from_cli) || cli_rc=$?
+
+  if [[ $cli_rc -eq 0 ]]; then
+    # CLI succeeded; result is authoritative even if empty
+    [[ -n "$cli_entries" ]] && printf '%s\n' "$cli_entries"
+    return 0
+  fi
+
+  # CLI failed; fall back to on-disk database
+  list_enrolled_entries_from_db
+}
+
+# Cleanup must catch stale entries even if sbctl's CLI view is incomplete.
+# Prefer CLI rows, but merge in database rows when the database is readable.
+list_enrolled_entries_for_cleanup() {
+  local cli_entries="" db_entries=""
+  local cli_rc=0 db_rc=0
+
+  cli_entries=$(list_enrolled_entries_from_cli) || cli_rc=$?
+  db_entries=$(list_enrolled_entries_from_db) || db_rc=$?
+
+  if [[ $cli_rc -ne 0 && $db_rc -ne 0 ]]; then
+    return 1
+  fi
+
+  {
+    [[ $cli_rc -ne 0 || -z "$cli_entries" ]] || printf '%s\n' "$cli_entries"
+    [[ $db_rc -ne 0 || -z "$db_entries" ]] || printf '%s\n' "$db_entries"
+  } | sort -u
 }
 
 # Extract output file paths from enrolled entries.

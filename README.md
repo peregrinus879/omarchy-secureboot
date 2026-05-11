@@ -131,11 +131,15 @@ First run: detects the Windows Boot Manager in firmware boot entries (by `bootmg
 
 ### `status`
 
-Shows Secure Boot state, ESP mount state, hook status, Limine 12 readiness diagnostics for path hashes and interface colors, Windows entry, and enrolled file verification. Works without root for basic info; requires root for file verification.
+Shows Secure Boot state, ESP mount state, hook status, Limine 12 readiness diagnostics for path hashes and interface colors, Windows entry, Omarchy Direct Boot firmware entries, stale sbctl tracking entries, and enrolled file verification. Works without root for basic info; stale tracking diagnostics and file verification require root.
 
 ### `sign`
 
 Repairs Linux-side Secure Boot state after updates by enforcing the Limine verification/enrollment settings in `/etc/default/limine`, ensuring the Windows boot entry uses the `efi_boot_entry` protocol, re-enrolling the `limine.conf` checksum if the config changed, cleaning stale database entries, and signing all EFI files currently present on the ESP. Used manually, by the pacman hooks, and by the Limine post-hook.
+
+### `cleanup`
+
+Removes stale sbctl tracked-file entries after validating that `/boot` is mounted as the FAT32 ESP. Used by `zz-omarchy-secureboot-cleanup.hook` before `zz-sbctl.hook`; run manually if `status` reports stale tracked files.
 
 ### `help`
 
@@ -170,7 +174,7 @@ For already-signed files, current Arch `sbctl 0.18-1` still has an upstream comp
 
 This is why `sign` may report a snapshot UKI as `registered` instead of `signed`.
 
-Tracking reads use `sbctl list-files` first, then fall back to the on-disk sbctl file database only when needed. If a fallback is required, this repo prefers `files.db` over `files.json`.
+Tracking reads use `sbctl list-files` first, then fall back to the on-disk sbctl file database only when needed. Stale-entry cleanup also merges in readable database entries so deleted snapshot UKIs do not remain hidden from cleanup if sbctl's CLI view is incomplete. If a fallback is required, this repo prefers `files.db` over `files.json`.
 
 ### Automatic Maintenance
 
@@ -183,7 +187,7 @@ Package-triggered repair uses pacman hooks. Limine-originated repair uses Limine
 | `zzz-omarchy-secureboot.hook` (ours) | `linux*`, `limine*`, `snapper*` packages | Runs lightweight repo repair after relevant package updates |
 | `zzz-omarchy-secureboot-sign` (ours) | Limine post-hook | Runs lightweight repo repair after upstream Limine tools finish changing boot files |
 
-Pacman hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < `zz-sbctl` < `zzz-omarchy-secureboot`. The cleanup hook mirrors `zz-sbctl.hook`'s `Type = Path` triggers so it fires in the same transactions. The repair hook uses `Type = Package` triggers for `linux*`, `limine*`, and `snapper*`. The Limine post-hook is named `zzz-omarchy-secureboot-sign` so it runs after Limine's packaged `90-limine-enroll-config` post-hook.
+Pacman hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < `zz-sbctl` < `zzz-omarchy-secureboot`. The cleanup hook mirrors `zz-sbctl.hook`'s `Type = Path` triggers so it fires in the same transactions, refuses to run unless `/boot` is the mounted FAT32 ESP, and removes stale tracked entries before sbctl runs. The repair hook uses `Type = Package` triggers for `linux*`, `limine*`, and `snapper*`. The Limine post-hook is named `zzz-omarchy-secureboot-sign` so it runs after Limine's packaged `90-limine-enroll-config` post-hook.
 
 **Why this matters:** The current Omarchy stack works with three separate pieces:
 
@@ -195,7 +199,7 @@ Pacman hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < 
 
 **Why path hashes are not managed here:** Limine also supports `path: ...#<blake2b>` suffixes, but Omarchy's current working state uses `ENABLE_VERIFICATION=no` and boots UKIs through EFI paths, which Limine 12 exempts from path-hash enforcement. Snapshot filenames such as `omarchy_linux.efi_sha256_<hex>` come from `limine-snapper-sync`; that SHA256 is part of the filename, not a Limine `path:` hash suffix. If future Omarchy entries load non-EFI paths under Limine 12 Secure Boot enforcement, `status` will flag missing BLAKE2B suffixes before and after the Limine 12 upgrade.
 
-**Why the repo does not rely only on sbctl internals:** Older sbctl states and migrations have used both `files.json` and `files.db`, while the public `sbctl list-files` CLI reflects the authoritative tracked set that hooks actually use. This repo therefore reads tracking state from the CLI first, and only falls back to the database for cleanup and compatibility logic.
+**Why the repo does not rely only on sbctl internals:** Older sbctl states and migrations have used both `files.json` and `files.db`, while the public `sbctl list-files` CLI remains the normal read path for tracking state. This repo reads tracking state from the CLI first, and only falls back to or merges the database for cleanup and compatibility logic.
 
 ### Windows Boot Path
 
@@ -310,6 +314,20 @@ sudo omarchy-secureboot sign
 This is most common after snapshot activity that happened before the Limine post-hook repaired the new files, or after boot drift introduced multiple changes at once.
 
 If this still appears immediately after a successful `sign`, check `sudo sbctl list-files` and verify the repo version is current. This repo includes a compatibility workaround for Arch `sbctl 0.18-1`, where `sbctl sign -s` may refuse to save an already-signed file.
+
+### `status` reports stale sbctl tracked files
+
+This means sbctl still tracks an EFI file that no longer exists, commonly an old snapshot UKI removed by `limine-snapper-sync`. Clean the stale entries before the next package transaction so `zz-sbctl.hook` does not fail trying to sign deleted files:
+
+```bash
+sudo omarchy-secureboot cleanup
+```
+
+If cleanup cannot remove an entry, inspect `sudo sbctl list-files` and run `sudo omarchy-secureboot status` again. The cleanup path checks that `/boot` is mounted as the FAT32 ESP before it removes any entries.
+
+### `status` warns about Omarchy Direct Boot
+
+Omarchy's Direct Boot toggle creates a firmware entry named `Omarchy` that boots `/boot/EFI/Linux/omarchy*.efi` directly. This is compatible with Secure Boot as long as the UKI is signed, but it bypasses the Limine menu, so snapshot entries and the repo-managed Windows BootNext menu entry will not appear on normal boot. Disable Direct Boot from Omarchy's toggle if you want Limine to be the default boot path.
 
 ### Windows disappeared from Limine boot menu
 
