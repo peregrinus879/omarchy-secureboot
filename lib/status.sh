@@ -283,7 +283,7 @@ show_status() {
   echo -e "  ${BOLD}ESP Mount${NC}"
   if command -v mountpoint >/dev/null 2>&1 && command -v findmnt >/dev/null 2>&1; then
     local esp_fstype=""
-    read -r esp_fstype < <(findmnt -n -T "$ESP" -o FSTYPE 2>/dev/null || true)
+    esp_fstype=$(findmnt -n -T "$ESP" -o FSTYPE 2>/dev/null) || esp_fstype=""
     if mountpoint -q "$ESP" && [[ "$esp_fstype" == "vfat" ]]; then
       pass "${ESP} mounted as vfat"
     else

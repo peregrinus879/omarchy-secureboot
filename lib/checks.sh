@@ -35,7 +35,7 @@ check_esp_mount() {
     || die "${ESP} is not a mountpoint. Refusing to modify a stale ESP directory."
 
   local fstype=""
-  read -r fstype < <(findmnt -n -T "$ESP" -o FSTYPE 2>/dev/null || true)
+  fstype=$(findmnt -n -T "$ESP" -o FSTYPE 2>/dev/null) || fstype=""
   [[ "$fstype" == "vfat" ]] \
     || die "${ESP} is mounted as ${fstype:-unknown}, expected vfat/FAT32 ESP"
 }
