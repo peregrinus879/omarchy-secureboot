@@ -468,6 +468,9 @@ show_status() {
     local stale_entries stale_rc=0 stale_file stale_output
     declare -A enrolled_map=()
     local -a missing_tracked=()
+    # Scoped to this section so the closing summary reflects file state
+    # only, not unrelated failures (e.g. Secure Boot disabled).
+    local files_ok=true
 
     enrolled_raw=$(list_enrolled_paths) || enrolled_rc=$?
     stale_entries=$(list_stale_sbctl_entries) || stale_rc=$?
@@ -489,6 +492,7 @@ show_status() {
     if [[ $enrolled_rc -ne 0 ]]; then
       fail "Could not read sbctl tracking state"
       all_ok=false
+      files_ok=false
     elif [[ -n "$enrolled_raw" ]]; then
       mapfile -t enrolled <<< "$enrolled_raw"
     fi
@@ -497,7 +501,7 @@ show_status() {
       : # already reported above
     elif [[ ${#enrolled[@]} -eq 0 ]]; then
       warn "No files in sbctl database"
-      [[ ${#discovered[@]} -eq 0 ]] || all_ok=false
+      [[ ${#discovered[@]} -eq 0 ]] || { all_ok=false; files_ok=false; }
     else
       for file in "${enrolled[@]}"; do
         enrolled_map["$file"]=1
@@ -518,6 +522,7 @@ show_status() {
         else
           echo -e "    ${RED}✗${NC} $file"
           all_ok=false
+          files_ok=false
         fi
       done
 
@@ -531,6 +536,7 @@ show_status() {
           echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. The Limine post-hook should repair this after upstream boot updates; run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} if you need an immediate manual repair.${NC}"
         fi
         all_ok=false
+        files_ok=false
       fi
 
     fi
@@ -543,11 +549,12 @@ show_status() {
       done
       echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot cleanup${NC}${DIM} or ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} before the next package transaction.${NC}"
       all_ok=false
+      files_ok=false
     fi
 
     if [[ $enrolled_rc -eq 0 && ${#enrolled[@]} -gt 0 ]]; then
       echo
-      if $all_ok; then
+      if $files_ok; then
         pass "All tracked files signed and all discovered EFI files enrolled"
       else
         warn "Some files failed. Run: ${BOLD}sudo omarchy-secureboot sign${NC}"
