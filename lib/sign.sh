@@ -16,11 +16,6 @@ load_limine_default_entry() {
   _limine_default_raw="$raw"
 }
 
-get_limine_default_raw() {
-  load_limine_default_entry "$1" || return 1
-  printf '%s\n' "${_limine_default_raw:-}"
-}
-
 replace_limine_default_entry() {
   local key="$1" desired="${2:-}" tmp
   tmp=$(mktemp "${LIMINE_DEFAULT_CONF}.XXXXXX") || return 2

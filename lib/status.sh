@@ -9,11 +9,6 @@ strip_outer_quotes() {
   printf '%s\n' "$value"
 }
 
-limine_default_effective_value() {
-  load_limine_default_entry "$1" || return 1
-  strip_outer_quotes "${_limine_default_raw:-}"
-}
-
 limine_default_has_command() {
   local value
   load_limine_default_entry "$1" || return 1
