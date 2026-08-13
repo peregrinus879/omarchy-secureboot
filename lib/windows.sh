@@ -112,6 +112,9 @@ add_windows_boot_entry() {
     return 0
   fi
 
+  command -v efibootmgr >/dev/null 2>&1 \
+    || die "efibootmgr not installed. Run: ${BOLD}sudo pacman -S efibootmgr${NC}"
+
   local boot_info bootnum entry_name
   boot_info=$(find_windows_boot_entry) || {
     fail "Windows Boot Manager not found in EFI boot entries"
