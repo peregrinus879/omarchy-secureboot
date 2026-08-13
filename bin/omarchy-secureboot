@@ -153,6 +153,10 @@ case "${1:-}" in
   version|--version|-v) echo "omarchy-secureboot ${VERSION}" ;;
   *)
     cmd_help
-    [[ -n "${1:-}" ]] && { fail "Unknown command: $1"; echo; exit 1; }
+    if [[ -n "${1:-}" ]]; then
+      fail "Unknown command: $1"
+      echo
+    fi
+    exit 1
     ;;
 esac
