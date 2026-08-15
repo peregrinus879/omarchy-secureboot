@@ -154,7 +154,7 @@ ensure_windows_boot_entry() {
   [[ -f "$LIMINE_CONF" ]] || return 0
 
   # Act if user opted in via 'windows' command, or if a repo-managed block
-  # already exists in limine.conf (covers older installs without the marker file)
+  # already exists in limine.conf (a block can exist without the marker file)
   if [[ ! -f "${STATE_DIR}/windows-enabled" ]]; then
     grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null || return 0
   fi

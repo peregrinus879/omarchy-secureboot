@@ -96,9 +96,8 @@ list_enrolled_entries_from_cli() {
   ' 2>/dev/null
 }
 
-# Query tracked files from sbctl's on-disk database. This is a fallback path
-# for stale-entry cleanup and sbctl compatibility logic, not the primary source
-# of truth for normal status checks.
+# Query tracked files from sbctl's on-disk database: a fallback path for
+# stale-entry cleanup and sbctl compatibility logic.
 list_enrolled_entries_from_db() {
   local files_db db_rc=0 json
   files_db=$(resolve_sbctl_files_db) || db_rc=$?
@@ -124,7 +123,7 @@ list_enrolled_entries_from_db() {
 
 # List file paths currently registered in sbctl's database.
 # Returns 0 on success (including empty), 1 on lookup failure.
-# CLI success with empty output is authoritative (no DB fallback).
+# CLI success with empty output is authoritative.
 # DB fallback only triggers when CLI fails.
 list_enrolled_entries() {
   local cli_entries cli_rc=0

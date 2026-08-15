@@ -334,7 +334,7 @@ list_stale_sbctl_entries() {
 }
 
 # Remove stale entries from sbctl's database:
-#   - files no longer on disk
+#   - files missing from disk
 #   - Microsoft paths (trusted via -m enrollment flag)
 #   - BOOTIA32.EFI (32-bit, irrelevant on x86_64)
 clean_stale_entries() {
