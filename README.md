@@ -170,7 +170,7 @@ This repo treats **signature state** and **tracking state** as separate concerns
 
 For normal unsigned files, `sbctl sign -s` both signs and tracks the file.
 
-For already-signed files, current Arch `sbctl 0.18-1` still has an upstream compatibility bug where `--save` may be ignored. Snapshot UKIs can hit exactly that case, because limine-snapper-sync may copy already-signed EFI files into snapshot history. When that happens, this repo writes the expected sbctl file entry directly so the file becomes truly tracked and future `zz-sbctl.hook` runs include it.
+For already-signed files, Arch's current `sbctl` (0.18) has an upstream bug where `--save` may be ignored. Snapshot UKIs can hit exactly that case, because limine-snapper-sync may copy already-signed EFI files into snapshot history. When that happens, this repo writes the expected sbctl file entry directly so the file becomes truly tracked and future `zz-sbctl.hook` runs include it.
 
 This is why `sign` may report a snapshot UKI as `registered` instead of `signed`.
 
@@ -197,15 +197,15 @@ Pacman hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < 
 
 **Why config enrollment is required:** Limine protects Secure Boot systems by embedding the checksum of `limine.conf` into the Limine EFI binary. Any time `limine.conf` changes, the checksum must be re-enrolled with `limine-enroll-config`. This enrollment mutates `limine_x64.efi`, which is why Windows must boot via firmware BootNext (not chainload) to avoid TPM PCR measurement drift.
 
-**Why path hashes are not managed here:** Limine also supports `path: ...#<blake2b>` suffixes, but Omarchy's current working state uses `ENABLE_VERIFICATION=no` and boots UKIs through EFI paths, which Limine 12 exempts from path-hash enforcement. Snapshot filenames such as `omarchy_linux.efi_sha256_<hex>` come from `limine-snapper-sync`; that SHA256 is part of the filename, not a Limine `path:` hash suffix. If future Omarchy entries load non-EFI paths under Limine 12 Secure Boot enforcement, `status` will flag missing BLAKE2B suffixes before and after the Limine 12 upgrade.
+**Why path hashes are not managed here:** Limine also supports `path: ...#<blake2b>` suffixes, but Omarchy's current working state uses `ENABLE_VERIFICATION=no` and boots UKIs through EFI paths, which Limine 12 exempts from path-hash enforcement. Snapshot filenames such as `omarchy_linux.efi_sha256_<hex>` come from `limine-snapper-sync`; that SHA256 is part of the filename, not a Limine `path:` hash suffix. If future Omarchy entries load non-EFI paths under Limine 12 Secure Boot enforcement, `status` flags the missing BLAKE2B suffixes.
 
-**Why the repo does not rely only on sbctl internals:** Older sbctl states and migrations have used both `files.json` and `files.db`, while the public `sbctl list-files` CLI remains the normal read path for tracking state. This repo reads tracking state from the CLI first, and only falls back to or merges the database for cleanup and compatibility logic.
+**Why the repo does not rely only on sbctl internals:** sbctl deployments may store tracking state in either `files.json` or `files.db`, while the public `sbctl list-files` CLI is the normal read path for tracking state. This repo reads tracking state from the CLI first, and only falls back to or merges the database for cleanup and compatibility logic.
 
 ### Windows Boot Path
 
 For dual-boot setups, this repo uses Limine's `efi_boot_entry` protocol instead of `efi` chainloading. When you select Windows from the Limine menu, Limine sets the firmware BootNext variable and triggers a reboot. On that reboot, firmware loads `bootmgfw.efi` directly from the Windows ESP, bypassing `limine_x64.efi` entirely.
 
-This avoids BitLocker recovery caused by TPM PCR measurement drift. `limine-snapper-sync` re-enrolls `limine_x64.efi` on every snapshot change, mutating the binary. With chainloading (`protocol: efi`), Windows boot measurements included that binary, triggering BitLocker. With `efi_boot_entry`, TPM PCRs reset on the firmware reboot, and Windows measurements only include `bootmgfw.efi` (stable).
+This avoids BitLocker recovery caused by TPM PCR measurement drift. `limine-snapper-sync` re-enrolls `limine_x64.efi` on every snapshot change, mutating the binary. With chainloading (`protocol: efi`), Windows boot measurements include that binary, triggering BitLocker. With `efi_boot_entry`, TPM PCRs reset on the firmware reboot, and Windows measurements only include `bootmgfw.efi` (stable).
 
 The `windows` command also provides a direct reboot-to-Windows path from Linux via `efibootmgr -n` (same firmware handoff, skips the Limine menu).
 
@@ -313,7 +313,7 @@ sudo omarchy-secureboot sign
 
 This is most common after snapshot activity that happened before the Limine post-hook repaired the new files, or after boot drift introduced multiple changes at once.
 
-If this still appears immediately after a successful `sign`, check `sudo sbctl list-files` and verify the repo version is current. This repo includes a compatibility workaround for Arch `sbctl 0.18-1`, where `sbctl sign -s` may refuse to save an already-signed file.
+If this still appears immediately after a successful `sign`, check `sudo sbctl list-files` and verify the repo version is current. This repo includes a compatibility workaround for Arch `sbctl` 0.18, where `sbctl sign -s` may refuse to save an already-signed file.
 
 ### `status` reports stale sbctl tracked files
 
@@ -445,9 +445,9 @@ It deliberately delegates everything else:
 
 Don't automate what's already automated. Fill the gaps that aren't.
 
-Current design: this repo owns pacman-triggered maintenance and Limine-originated boot-drift repair through Limine's post-hook mechanism.
+This repo owns pacman-triggered maintenance and Limine-originated boot-drift repair through Limine's post-hook mechanism.
 
-`zz-sbctl.hook` works on Omarchy because UKIs now use `CUSTOM_UKI_NAME="omarchy"` and live at `/boot/EFI/Linux/omarchy_linux.efi`. Earlier Omarchy releases placed UKIs at `/boot/{machine-id}/`, which caused sbctl to try signing a directory. That no longer applies.
+`zz-sbctl.hook` works on Omarchy because UKIs use `CUSTOM_UKI_NAME="omarchy"` and live at `/boot/EFI/Linux/omarchy_linux.efi`.
 
 ## License
 
