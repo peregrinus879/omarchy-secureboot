@@ -8,7 +8,9 @@ readonly ESP="/boot"
 readonly LIMINE_CONF="${ESP}/limine.conf"
 # shellcheck disable=SC2034 # Used by sourced lib files.
 readonly STATE_DIR="/var/lib/omarchy-secureboot"
-readonly LIMINE_LOCK_FILE="/tmp/limine-global.lock"
+# Must match BOOT_PARTITION_LOCK in limine-entry-tool and limine-snapper-sync,
+# which own this mutex.
+readonly LIMINE_LOCK_FILE="/run/lock/boot-partition.lock"
 
 # --- Colors ------------------------------------------------------------------
 
