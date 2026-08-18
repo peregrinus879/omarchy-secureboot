@@ -60,7 +60,6 @@ Cloned under `~/Projects/quarry/`:
 - Arch's sbctl 0.18-2, a packaging-only rebuild of the 0.18 tag, ignores `sign -s` for already-signed files. Snapshot UKIs can therefore be signed but untracked. `save_sbctl_file_entry()` writes the expected `SigningEntry` directly into sbctl's file database. Upstream fixed this on master in commit `ae9c8958` (issue #482) on 2026-01-01, but no later release was tagged as of 2026-08-13. Remove the workaround only after a tagged fixed release reaches Arch; verify with `pacman -Q sbctl` and the upstream release list.
 - `zz-sbctl.hook` runs `sbctl sign-all -g`; `-g` tells sbctl to generate or rebuild UKI bundles. With `CUSTOM_UKI_NAME="omarchy"` and limine-entry-tool building UKIs while its own `sb_sign()` is disabled, this should be a no-op. If it causes issues, replace `zz-sbctl.hook` with a custom hook that runs `sbctl sign-all` without `-g`.
 - The cleanup hook filename must sort before sbctl's package hook. If upstream renames `zz-sbctl.hook`, `status` reports it missing and the cleanup hook filename may also need adjustment.
-- The current migration commit names the earlier `omarchy-secureboot` paths, hooks, marker, and sentinel only to migrate the known host. Remove all migration branches and references after that host has canonical state, a migrated active `limine.conf`, healthy status, and a durable rollback copy.
 
 ## Deferred Items
 

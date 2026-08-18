@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/omasecboot-windows-migration.XXXXXX")
+TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/omasecboot-windows-entry.XXXXXX")
 LIMINE_CONF="${TEST_DIR}/limine.conf"
 STATE_DIR="${TEST_DIR}/state"
 
@@ -49,7 +49,7 @@ mkdir -p "$STATE_DIR"
 cat > "$LIMINE_CONF" <<'EOF'
 timeout: 5
 
-# omarchy-secureboot:windows
+# omasecboot:windows
 /Windows
     comment: Windows Boot Manager
     protocol: efi_boot_entry
@@ -60,29 +60,26 @@ timeout: 5
     path: boot():/EFI/Linux/omarchy_linux.efi
 EOF
 
-windows_entry_is_configured || fail_test "old marker was not recognized"
-ensure_windows_boot_entry || fail_test "old marker migration failed"
+windows_entry_is_configured || fail_test "managed marker was not recognized"
+ensure_windows_boot_entry || fail_test "managed entry check failed"
 
 [[ $(grep -Fc "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF") -eq 1 ]] \
-  || fail_test "canonical marker was not written exactly once"
-if grep -Fq "$LEGACY_WINDOWS_ENTRY_MARKER" "$LIMINE_CONF"; then
-  fail_test "old marker survived migration"
-fi
+  || fail_test "managed marker was not retained exactly once"
 [[ $(grep -Fc '/Windows' "$LIMINE_CONF") -eq 1 ]] \
-  || fail_test "migration duplicated the Windows entry"
+  || fail_test "managed entry check duplicated the Windows entry"
 grep -Fq 'timeout: 5' "$LIMINE_CONF" \
-  || fail_test "migration dropped unrelated global config"
+  || fail_test "managed entry check dropped unrelated global config"
 grep -Fq '/Linux' "$LIMINE_CONF" \
-  || fail_test "migration dropped an unrelated entry"
+  || fail_test "managed entry check dropped an unrelated entry"
 
 cp -p "$LIMINE_CONF" "${TEST_DIR}/limine.conf.once"
 ensure_windows_boot_entry || fail_test "canonical marker recheck failed"
 cmp "${TEST_DIR}/limine.conf.once" "$LIMINE_CONF" \
-  || fail_test "canonical marker migration was not idempotent"
+  || fail_test "managed entry check was not idempotent"
 
 cat >> "$LIMINE_CONF" <<'EOF'
 
-# omarchy-secureboot:windows
+# omasecboot:windows
 /Windows
     protocol: efi_boot_entry
     entry: Windows Boot Manager
@@ -94,8 +91,4 @@ update_windows_boot_entry "Windows Boot Manager" \
   || fail_test "duplicate repair did not leave one canonical marker"
 [[ $(grep -Fc '/Windows' "$LIMINE_CONF") -eq 1 ]] \
   || fail_test "duplicate repair did not leave one Windows entry"
-if grep -Fq "$LEGACY_WINDOWS_ENTRY_MARKER" "$LIMINE_CONF"; then
-  fail_test "duplicate repair retained the old marker"
-fi
-
-printf 'windows migration tests passed\n'
+printf 'windows entry tests passed\n'

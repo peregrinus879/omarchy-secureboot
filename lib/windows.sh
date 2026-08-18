@@ -2,7 +2,6 @@
 # OmaSecBoot: Windows dual-boot via firmware BootNext
 
 readonly WINDOWS_ENTRY_MARKER="# omasecboot:windows"
-readonly LEGACY_WINDOWS_ENTRY_MARKER="# omarchy-secureboot:windows"
 
 # Find the Windows Boot Manager firmware entry by loader path.
 # Prints "bootnum<TAB>entry_name" or returns 1 if not found.
@@ -27,8 +26,7 @@ find_windows_boot_entry() {
 }
 
 windows_entry_is_configured() {
-  grep -Fq "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null \
-    || grep -Fq "$LEGACY_WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null
+  grep -Fq "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null
 }
 
 # Write the Windows efi_boot_entry block to limine.conf.
@@ -51,9 +49,7 @@ update_windows_boot_entry() {
     return 1
   }
 
-  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" \
-    -v legacy_marker="$LEGACY_WINDOWS_ENTRY_MARKER" \
-    -v entry_name="$entry_name" '
+  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" -v entry_name="$entry_name" '
     function print_block() {
       print ""
       print marker
@@ -69,7 +65,7 @@ update_windows_boot_entry() {
       inserted = 0
     }
 
-    $0 == marker || $0 == legacy_marker {
+    $0 == marker {
       if (!inserted) {
         print_block()
       }

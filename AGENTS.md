@@ -2,7 +2,7 @@
 
 OmaSecBoot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff for Omarchy.
 
-Naming boundary: `OmaSecBoot` is the product/display name; `omasecboot` is the sole user command and machine-facing namespace. This migration release removes the earlier `omarchy-secureboot` command, hooks, library, state, marker, and sentinel only after their canonical replacements exist and the durable Windows opt-in is preserved.
+Naming boundary: `OmaSecBoot` is the product/display name; `omasecboot` is the sole user command and machine-facing namespace. The command, library, state, hooks, Windows marker, and Limine-hook sentinel use the canonical namespace.
 
 ## Load Map
 
@@ -20,7 +20,7 @@ Naming boundary: `OmaSecBoot` is the product/display name; `omasecboot` is the s
 - `limine-hooks/zzz-omasecboot-sign` - Limine post-hook that runs `sign` after upstream Limine tools mutate boot files
 - `tests/install.sh` - Staged install, upgrade, hook-target, and uninstall contract checks
 - `tests/windows.sh` - Hermetic Windows firmware handoff and Quattro menu contract checks
-- `tests/windows-migration.sh` - Hermetic managed-marker migration and idempotence checks
+- `tests/windows-entry.sh` - Hermetic managed-marker and idempotence checks
 - `omarchy/omarchy-menu.jsonc` - Quattro user-menu fragment for graceful reboot-to-Windows handoff
 - `docs/maintenance.md` - On-demand sources, compatibility findings, removal triggers, and deferred work
 - `Makefile` - Install/uninstall targets
@@ -42,7 +42,7 @@ sbctl, jq, gum (interactive only). Omarchy provides the rest (`limine-update`, `
 
 ## Operational Invariants
 
-- Preserve the naming and deployment contracts above. Temporary migration code exists only until the known host passes its namespace gate.
+- Preserve the naming and deployment contracts above, including the durable Windows opt-in in canonical state.
 - `setup` and `sign` maintain signed EFI binaries plus enrolled `limine.conf` checksums with `ENABLE_VERIFICATION=no` and `ENABLE_ENROLL_LIMINE_CONFIG=yes`. Keep `ensure_limine_secure_boot_settings` in the sign path and keep its Quattro write target at `/etc/default/limine`, outside package-owned drop-ins.
 - Do not reintroduce Limine `path: ...#hash` management while Omarchy boots UKIs through `protocol: efi`. Warn on incompatible non-EFI paths instead of mutating them automatically.
 - limine-snapper-sync snapshot filenames can end in `.efi_sha256_<hash>`, `.efi_sha1_*`, `.efi_b3_*`, or `.efi_xxh_*`; that suffix belongs to the filename and is not a Limine path hash.

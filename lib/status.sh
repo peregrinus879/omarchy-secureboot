@@ -433,9 +433,6 @@ show_status() {
       warn "Managed Windows entry in limine.conf needs repair"
       echo -e "  ${DIM}Run ${BOLD}sudo omasecboot sign${NC}${DIM} to upgrade it${NC}"
     fi
-  elif grep -Fq "$LEGACY_WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
-    warn "Windows boot entry marker needs migration"
-    echo -e "  ${DIM}Run ${BOLD}sudo omasecboot sign${NC}${DIM} to migrate it${NC}"
   else
     if [[ -f "${STATE_DIR}/windows-enabled" ]]; then
       echo -e "  ${DIM}Windows boot entry missing from limine.conf (will be restored by sign)${NC}"

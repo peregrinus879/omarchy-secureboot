@@ -71,8 +71,6 @@ If your Windows installation uses BitLocker drive encryption:
 
 `OmaSecBoot` is the product name; `omasecboot` is the command, repository slug, and machine-facing namespace.
 
-This migration release installs the canonical namespace, preserves an existing Windows opt-in marker, and removes the earlier `omarchy-secureboot` command, hooks, library, and state paths after their replacements exist. Run `sudo omasecboot sign` once after upgrading to migrate the managed marker in active `limine.conf`.
-
 ```bash
 git clone https://github.com/peregrinus879/omasecboot.git ~/Projects/eyrie/omasecboot
 cd ~/Projects/eyrie/omasecboot
