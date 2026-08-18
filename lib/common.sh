@@ -1,8 +1,8 @@
 #!/bin/bash
-# omarchy-secureboot: shared constants and output helpers
+# OmaSecBoot: shared constants and output helpers
 
 # shellcheck disable=SC2034 # Constants are consumed by sourced lib files.
-readonly VERSION="1.0.0"
+readonly VERSION="2.0.0"
 readonly ESP="/boot"
 # shellcheck disable=SC2034 # Used by sourced lib files.
 readonly LIMINE_CONF="${ESP}/limine.conf"
@@ -24,7 +24,7 @@ readonly NC='\033[0m'
 
 # --- Output helpers ----------------------------------------------------------
 
-header() { echo -e "\n${BOLD}omarchy-secureboot${NC} ${DIM}-${NC} ${BOLD}$*${NC}\n"; }
+header() { echo -e "\n${BOLD}OmaSecBoot${NC} ${DIM}-${NC} ${BOLD}$*${NC}\n"; }
 pass()   { echo -e "  ${GREEN}✓${NC} $*"; }
 fail()   { echo -e "  ${RED}✗${NC} $*"; }
 warn()   { echo -e "  ${YELLOW}!${NC} $*"; }
@@ -81,7 +81,7 @@ limine_major_version() {
 backup_file() {
   local file="$1" backup
   [[ -f "$file" ]] || return 1
-  backup=$(mktemp "/tmp/omarchy-secureboot.$(basename "$file").XXXXXX") || return 1
+  backup=$(mktemp "/tmp/omasecboot.$(basename "$file").XXXXXX") || return 1
   cp -p "$file" "$backup" || {
     rm -f "$backup"
     return 1

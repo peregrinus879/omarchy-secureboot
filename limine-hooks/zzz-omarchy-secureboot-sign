@@ -5,4 +5,4 @@ set -euo pipefail
 # finished updating boot files. The parent Limine tool owns its global lock.
 export OMARCHY_SECUREBOOT_IN_LIMINE_HOOK=true
 
-exec @BINDIR@/omarchy-secureboot --quiet sign
+exec @BINDIR@/omasecboot --quiet sign

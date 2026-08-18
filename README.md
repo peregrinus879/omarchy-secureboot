@@ -66,7 +66,7 @@ If your Windows installation uses BitLocker drive encryption:
 
 ## Installation
 
-OmaSecBoot installs the stable `omarchy-secureboot` command and matching hook, library, and state paths as compatibility interfaces.
+OmaSecBoot installs the `omasecboot` command. Installation removes the obsolete `omarchy-secureboot` executable while retaining the established hook filenames, library path, and state path.
 
 ```bash
 git clone https://github.com/peregrinus879/omasecboot.git ~/Projects/eyrie/omasecboot
@@ -75,7 +75,7 @@ sudo make install
 ```
 
 Installs to:
-- `/usr/local/bin/omarchy-secureboot`
+- `/usr/local/bin/omasecboot`
 - `/usr/local/lib/omarchy-secureboot/`
 - `/etc/pacman.d/hooks/zz-omarchy-secureboot-cleanup.hook`
 - `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`
@@ -89,7 +89,7 @@ To uninstall: `sudo make uninstall`
 **Step 1** - Create keys and sign EFI files:
 
 ```bash
-sudo omarchy-secureboot setup
+sudo omasecboot setup
 ```
 
 **Step 2** - Reboot into BIOS/UEFI, clear Secure Boot keys (enter Setup Mode), save and exit.
@@ -102,7 +102,7 @@ sudo omarchy-secureboot setup
 **Step 3** - Enroll keys into firmware:
 
 ```bash
-sudo omarchy-secureboot enroll
+sudo omasecboot enroll
 ```
 
 **Step 4** - Reboot into BIOS/UEFI, enable Secure Boot, save and exit.
@@ -110,7 +110,7 @@ sudo omarchy-secureboot enroll
 **Step 5** *(dual-boot only)* - Add Windows to Limine boot menu:
 
 ```bash
-sudo omarchy-secureboot windows
+sudo omasecboot windows
 ```
 
 The first run adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Subsequent runs set BootNext and reboot to Windows immediately. You can also select Windows from the Limine boot menu directly. The pacman hooks handle package-triggered maintenance, and the Limine post-hook handles boot drift created by `limine-update` or `limine-snapper-sync`.
@@ -239,7 +239,7 @@ Bootloader update
 
 ### Code Structure
 
-Single dispatcher (`bin/omarchy-secureboot`) sources modular libraries:
+Single dispatcher (`bin/omasecboot`) sources modular libraries:
 
 - `common.sh` -- output helpers, quiet mode, backup/restore
 - `checks.sh` -- prerequisite validation (root, deps, EFI mount)
@@ -276,15 +276,15 @@ Ensure the Windows disk is connected and visible in BIOS. Check with `efibootmgr
 Boot into BIOS, temporarily disable Secure Boot, boot into Linux, then:
 
 ```bash
-sudo omarchy-secureboot status    # Check what's unsigned or misconfigured
-sudo omarchy-secureboot sign      # Repair config drift and sign EFI files
+sudo omasecboot status    # Check what's unsigned or misconfigured
+sudo omasecboot sign      # Repair config drift and sign EFI files
 ```
 
 Re-enable Secure Boot after confirming all files verify.
 
 ### Snapshot fails to boot after kernel update
 
-Run `sudo omarchy-secureboot sign` to discover and sign new snapshot UKIs if you need an immediate manual repair. The pacman hooks and Limine post-hook normally cover package-triggered and Limine-originated boot drift automatically.
+Run `sudo omasecboot sign` to discover and sign new snapshot UKIs if you need an immediate manual repair. The pacman hooks and Limine post-hook normally cover package-triggered and Limine-originated boot drift automatically.
 
 ### Limine panics about config checksum enrollment
 
@@ -292,7 +292,7 @@ This means Limine's Secure Boot config enrollment drifted out of sync after an u
 
 ```bash
 sudo limine-enroll-config
-sudo omarchy-secureboot sign
+sudo omasecboot sign
 ```
 
 This re-enrolls the current config checksum, restores the required `/etc/default/limine` settings, repairs repo-managed config drift, and signs EFI files. The pacman hooks and Limine post-hook do this automatically in normal operation.
@@ -303,14 +303,14 @@ This warning is informational. It refers to Omarchy's upstream snapshot service,
 
 - Package-triggered repair still works through `zz-omarchy-secureboot-cleanup.hook` and `zzz-omarchy-secureboot.hook`.
 - Limine-originated repair still works through `/etc/boot/hooks/post.d/zzz-omarchy-secureboot-sign`.
-- Manual repair still works through `sudo omarchy-secureboot sign`.
+- Manual repair still works through `sudo omasecboot sign`.
 
 ### `status` reports untracked snapshot UKIs
 
 This means new EFI files exist under `/boot` but are not yet in sbctl's database. Register and sign them with:
 
 ```bash
-sudo omarchy-secureboot sign
+sudo omasecboot sign
 ```
 
 This is most common after snapshot activity that happened before the Limine post-hook repaired the new files, or after boot drift introduced multiple changes at once.
@@ -322,10 +322,10 @@ If this still appears immediately after a successful `sign`, check `sudo sbctl l
 This means sbctl still tracks an EFI file that no longer exists, commonly an old snapshot UKI removed by `limine-snapper-sync`. Clean the stale entries before the next package transaction so `zz-sbctl.hook` does not fail trying to sign deleted files:
 
 ```bash
-sudo omarchy-secureboot cleanup
+sudo omasecboot cleanup
 ```
 
-If cleanup cannot remove an entry, inspect `sudo sbctl list-files` and run `sudo omarchy-secureboot status` again. The cleanup path checks that `/boot` is mounted as the FAT32 ESP before it removes any entries.
+If cleanup cannot remove an entry, inspect `sudo sbctl list-files` and run `sudo omasecboot status` again. The cleanup path checks that `/boot` is mounted as the FAT32 ESP before it removes any entries.
 
 ### `status` warns about Omarchy Direct Boot
 
@@ -336,14 +336,14 @@ Omarchy's Direct Boot toggle creates a firmware entry named `Omarchy` that boots
 This happens when `omarchy-refresh-limine`, `limine-update`, or `limine-snapper-sync` overwrites `limine.conf`. The pacman hooks and Limine post-hook restore the repo-managed entry automatically with the correct `efi_boot_entry` protocol. To restore immediately:
 
 ```bash
-sudo omarchy-secureboot sign
+sudo omasecboot sign
 ```
 
 ### `status` warns about unmanaged Windows chainload entry
 
-For repo-managed Windows entries, run `sudo omarchy-secureboot sign` to restore the `protocol: efi_boot_entry` block. The managed entry uses firmware BootNext, which avoids BitLocker recovery by keeping `limine_x64.efi` out of the Windows boot measurement chain.
+For repo-managed Windows entries, run `sudo omasecboot sign` to restore the `protocol: efi_boot_entry` block. The managed entry uses firmware BootNext, which avoids BitLocker recovery by keeping `limine_x64.efi` out of the Windows boot measurement chain.
 
-If `status` reports an unmanaged Windows EFI chainload entry, add the managed BootNext entry with `sudo omarchy-secureboot windows`, then remove any duplicate chainload entry manually if Omarchy's bootloader scan left one behind.
+If `status` reports an unmanaged Windows EFI chainload entry, add the managed BootNext entry with `sudo omasecboot windows`, then remove any duplicate chainload entry manually if Omarchy's bootloader scan left one behind.
 
 ### `status` warns about Limine 12 path hashes
 
@@ -363,7 +363,7 @@ Replace it in `/boot/limine.conf` with a hex color, then re-enroll and sign:
 sudo cp -a /boot/limine.conf "/boot/limine.conf.bak.$(date +%Y%m%d-%H%M%S)"
 sudo sed -i 's/^interface_branding_color: 2$/interface_branding_color: 9ece6a/' /boot/limine.conf
 sudo limine-enroll-config
-sudo omarchy-secureboot sign
+sudo omasecboot sign
 ```
 
 `9ece6a` matches Omarchy's Tokyo Night green accent. If `omarchy-refresh-limine` restores the old value later, rerun the same replacement or update Omarchy's source default before refreshing Limine.
@@ -375,7 +375,7 @@ Windows `Scanning and repairing drive` or `chkdsk` is separate from BitLocker re
 From Linux, check for duplicate or unmanaged Windows boot paths and whether Windows partitions are mounted:
 
 ```bash
-sudo omarchy-secureboot status
+sudo omasecboot status
 sudo efibootmgr -v | grep -i 'bootmgfw\.efi'
 findmnt -t ntfs3,ntfs,fuseblk
 grep -nA4 -B2 'omarchy-secureboot:windows\|protocol: efi\|protocol: efi_chainload\|protocol: uefi\|bootmgfw' /boot/limine.conf
@@ -406,8 +406,8 @@ If the system will not boot with Secure Boot enabled:
 1. Enter BIOS/UEFI firmware settings
 2. Disable Secure Boot temporarily
 3. Boot into Linux normally
-4. Diagnose with `sudo omarchy-secureboot status`
-5. Repair with `sudo omarchy-secureboot sign`
+4. Diagnose with `sudo omasecboot status`
+5. Repair with `sudo omasecboot sign`
 6. Re-enable Secure Boot in BIOS after confirming all files verify
 
 ### Full rollback
@@ -426,7 +426,7 @@ If BIOS keys are cleared (factory reset, accidental clear, or hardware change):
 
 1. The local signing keys from `sbctl create-keys` are still on disk. No need to recreate them.
 2. Enter Setup Mode in BIOS (clear/reset Secure Boot keys)
-3. Run `sudo omarchy-secureboot enroll` to re-enroll your keys
+3. Run `sudo omasecboot enroll` to re-enroll your keys
 4. Enable Secure Boot in BIOS
 
 If you need to verify your keys still exist: `sbctl status`

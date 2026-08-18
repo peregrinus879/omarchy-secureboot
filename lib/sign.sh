@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy-secureboot: key creation, EFI signing, database cleanup
+# OmaSecBoot: key creation, EFI signing, database cleanup
 
 readonly LIMINE_DEFAULT_CONF="/etc/default/limine"
 
@@ -385,7 +385,7 @@ save_sbctl_file_entry() {
 
   local db_dir
   db_dir=$(dirname "$files_db")
-  tmp=$(mktemp "${db_dir}/.omarchy-secureboot.sbctl-files.XXXXXX") || {
+  tmp=$(mktemp "${db_dir}/.omasecboot.sbctl-files.XXXXXX") || {
     [[ -z "$backup" ]] || discard_file_backup "$backup"
     return 1
   }

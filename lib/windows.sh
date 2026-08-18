@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy-secureboot: Windows dual-boot via firmware BootNext
+# OmaSecBoot: Windows dual-boot via firmware BootNext
 
 readonly WINDOWS_ENTRY_MARKER="# omarchy-secureboot:windows"
 
@@ -39,7 +39,7 @@ update_windows_boot_entry() {
 
   local conf_dir
   conf_dir=$(dirname "$LIMINE_CONF")
-  tmp=$(mktemp "${conf_dir}/.omarchy-secureboot.limine.conf.XXXXXX") || {
+  tmp=$(mktemp "${conf_dir}/.omasecboot.limine.conf.XXXXXX") || {
     discard_file_backup "$backup"
     fail "Could not create temporary file for ${LIMINE_CONF}"
     return 1

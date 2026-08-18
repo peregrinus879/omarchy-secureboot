@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy-secureboot: key enrollment into UEFI firmware
+# OmaSecBoot: key enrollment into UEFI firmware
 
 enroll_keys() {
   local setup_mode
@@ -12,7 +12,7 @@ enroll_keys() {
     echo -e "  ${BOLD}To enter Setup Mode${NC}"
     echo "    1. Reboot into BIOS/UEFI firmware settings"
     echo "    2. Clear/reset Secure Boot keys"
-    echo -e "    3. Save, reboot, run ${BOLD}sudo omarchy-secureboot enroll${NC}"
+    echo -e "    3. Save, reboot, run ${BOLD}sudo omasecboot enroll${NC}"
     echo
     return 1
   fi
@@ -38,6 +38,6 @@ enroll_keys() {
   echo "    1. Reboot into BIOS/UEFI firmware settings"
   echo "    2. Enable Secure Boot"
   echo "    3. Save and exit"
-  echo -e "    Verify after reboot: ${BOLD}sudo omarchy-secureboot status${NC}"
+  echo -e "    Verify after reboot: ${BOLD}sudo omasecboot status${NC}"
   echo
 }

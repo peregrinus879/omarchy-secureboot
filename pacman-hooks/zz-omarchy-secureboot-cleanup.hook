@@ -1,4 +1,4 @@
-# Omarchy Secure Boot: remove stale entries from sbctl's file database.
+# OmaSecBoot: remove stale entries from sbctl's file database.
 # Runs before zz-sbctl.hook so sbctl sign-all does not fail on deleted files.
 # Mirrors zz-sbctl.hook's Path triggers to fire in the same transactions.
 
@@ -17,6 +17,6 @@ Target = usr/share/**/*.efi*
 [Action]
 Description = Secure Boot: clean stale sbctl entries
 When = PostTransaction
-Exec = @BINDIR@/omarchy-secureboot --quiet cleanup
+Exec = @BINDIR@/omasecboot --quiet cleanup
 Depends = sbctl
 Depends = jq

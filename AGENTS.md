@@ -2,16 +2,17 @@
 
 OmaSecBoot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff for Omarchy.
 
-Stable-command boundary: repository identity is OmaSecBoot; the compatibility interface uses the `omarchy-secureboot` command, hook filenames, library path, and `/var/lib` state path. Do not rename those identifiers for repository-identity consistency.
+Command boundary: `omasecboot` is the sole user command, and `make install` removes the obsolete `omarchy-secureboot` executable. Existing hook filenames, the library path, `/var/lib` state path, Windows marker, and Limine-hook sentinel remain deployment contracts; do not rename them without a stateful migration.
 
 ## Key Files
 
 - `README.md` - User documentation, design philosophy, troubleshooting
-- `bin/omarchy-secureboot` - Entry point and command dispatcher
+- `bin/omasecboot` - Entry point and command dispatcher
 - `lib/*.sh` - Modular function libraries (common, checks, discover, sign, enroll, windows, status)
 - `pacman-hooks/zz-omarchy-secureboot-cleanup.hook` - Pacman hook that removes stale sbctl entries before `zz-sbctl.hook` runs
 - `pacman-hooks/zzz-omarchy-secureboot.hook` - Pacman hook that runs `sign` after kernel, bootloader, or snapshot-related package updates
 - `limine-hooks/zzz-omarchy-secureboot-sign` - Limine post-hook that runs `sign` after upstream Limine tools mutate boot files
+- `tests/install.sh` - Staged install, upgrade, hook-target, and uninstall contract checks
 - `Makefile` - Install/uninstall targets
 
 ## Architecture
@@ -111,7 +112,7 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 - **Remove sbctl 0.18 `save_sbctl_file_entry()` workaround**: When a tagged sbctl release containing upstream fix `ae9c8958` (issue #482) reaches Arch, `sbctl sign -s` will save already-signed files to the database. At that point, remove `save_sbctl_file_entry()` from `sign.sh` and the direct database write path. Check with `pacman -Q sbctl` and the upstream release list. As of 2026-08-13, Arch ships sbctl 0.18-2, a packaging-only rebuild of the 0.18 tag; the fix has sat unreleased on master since 2026-01-01.
 - **Derive Limine `efi_boot_entry` name dynamically**: `find_windows_boot_entry()` currently strips device path info from `efibootmgr` output to extract the firmware entry label. If firmware or Windows updates ever change the label, the Limine menu entry would go stale. A future improvement could compare the `entry:` value in `limine.conf` against the current firmware label and rewrite if they differ. Not currently justified since the label has been stable across all known Windows UEFI installations.
 - **Quickshell integration** (optional): Omarchy's shell is quickshell ("omarchy-shell") and documents two user-level extension points relevant here: a `~/.config/omarchy/extensions/omarchy-menu.jsonc` drop-in (a "Reboot to Windows" entry, e.g. id `system.windows` with a `when` guard, invoking the tool via terminal + sudo) and `shell.json` command bar modules (Waybar-style JSON output; would need `sign` to write a user-readable state file since the shell runs unprivileged). Candidate: ship a documented README snippet for the menu entry.
-- **Marketplace companion plugin** (deferred): omarchyplugins.com is a community marketplace (HANCORE, repo `HANCORE-linux/omarchy-plugin-marketplace`, unaffiliated with 37signals) listing Quattro-format plugins: git repo + `manifest.json` (schemaVersion 1, kinds limited to six QML shell surfaces), installed user-level via `omarchy plugin add` with no scripts and no root. This repo cannot be listed as-is (no QML entry point; the install channel cannot write `/usr/local`, `/etc/pacman.d/hooks`, or `/etc/boot/hooks`). Viable path: a separate companion plugin repo (id outside `omarchy.*`, e.g. `peregrinus.secureboot`, kinds `bar-widget` + `menu`) surfacing Secure Boot status and the reboot-to-Windows action, with `sudo omarchy-secureboot setup` documented as a manual post-install step. Precedent: elynch303/security-scan ships a manual `install.sh` and passed listing. The security baseline review-allows installers/sudo/package-manager use and auto-blocks only NOPASSWD sudoers, curl-piped-to-shell, unpinned remote execution, and /tmp-PID abuse; this repo's design uses none of those. Open: maintainer acceptance of a pacman-hook-installing setup step, and whether the discretionary "suite" listing type could carry the CLI tool alone.
+- **Marketplace companion plugin** (deferred): omarchyplugins.com is a community marketplace (HANCORE, repo `HANCORE-linux/omarchy-plugin-marketplace`, unaffiliated with 37signals) listing Quattro-format plugins: git repo + `manifest.json` (schemaVersion 1, kinds limited to six QML shell surfaces), installed user-level via `omarchy plugin add` with no scripts and no root. This repo cannot be listed as-is (no QML entry point; the install channel cannot write `/usr/local`, `/etc/pacman.d/hooks`, or `/etc/boot/hooks`). Viable path: a separate companion plugin repo (id outside `omarchy.*`, e.g. `peregrinus.secureboot`, kinds `bar-widget` + `menu`) surfacing Secure Boot status and the reboot-to-Windows action, with `sudo omasecboot setup` documented as a manual post-install step. Precedent: elynch303/security-scan ships a manual `install.sh` and passed listing. The security baseline review-allows installers/sudo/package-manager use and auto-blocks only NOPASSWD sudoers, curl-piped-to-shell, unpinned remote execution, and /tmp-PID abuse; this repo's design uses none of those. Open: maintainer acceptance of a pacman-hook-installing setup step, and whether the discretionary "suite" listing type could carry the CLI tool alone.
 
 ## Conventions
 

@@ -5,10 +5,10 @@ HOOKDIR   = /etc/pacman.d/hooks
 LIMINEHOOKDIR = /etc/boot/hooks/post.d
 STATEDIR  = /var/lib/omarchy-secureboot
 
-.PHONY: install uninstall
+.PHONY: install uninstall test
 
 install:
-	install -Dm755 bin/omarchy-secureboot $(DESTDIR)$(BINDIR)/omarchy-secureboot
+	install -Dm755 bin/omasecboot $(DESTDIR)$(BINDIR)/omasecboot
 	install -Dm644 -t $(DESTDIR)$(LIBDIR)/ lib/*.sh
 	install -d $(DESTDIR)$(HOOKDIR)
 	sed 's|@BINDIR@|$(BINDIR)|g' pacman-hooks/zz-omarchy-secureboot-cleanup.hook > $(DESTDIR)$(HOOKDIR)/zz-omarchy-secureboot-cleanup.hook
@@ -19,15 +19,20 @@ install:
 	sed 's|@BINDIR@|$(BINDIR)|g' limine-hooks/zzz-omarchy-secureboot-sign > $(DESTDIR)$(LIMINEHOOKDIR)/zzz-omarchy-secureboot-sign
 	chmod 755 $(DESTDIR)$(LIMINEHOOKDIR)/zzz-omarchy-secureboot-sign
 	install -d $(DESTDIR)$(STATEDIR)
+	rm -f $(DESTDIR)$(BINDIR)/omarchy-secureboot
 	@echo
-	@echo "Installed omarchy-secureboot to $(BINDIR)"
-	@echo "Run: sudo omarchy-secureboot help"
+	@echo "Installed omasecboot to $(BINDIR)"
+	@echo "Run: sudo omasecboot help"
 
 uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/omasecboot
 	rm -f $(DESTDIR)$(BINDIR)/omarchy-secureboot
 	rm -rf $(DESTDIR)$(LIBDIR)
 	rm -f $(DESTDIR)$(HOOKDIR)/zz-omarchy-secureboot-cleanup.hook
 	rm -f $(DESTDIR)$(HOOKDIR)/zzz-omarchy-secureboot.hook
 	rm -f $(DESTDIR)$(LIMINEHOOKDIR)/zzz-omarchy-secureboot-sign
 	rm -rf $(DESTDIR)$(STATEDIR)
-	@echo "Uninstalled omarchy-secureboot"
+	@echo "Uninstalled omasecboot"
+
+test:
+	bash tests/install.sh

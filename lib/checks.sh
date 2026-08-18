@@ -1,8 +1,8 @@
 #!/bin/bash
-# omarchy-secureboot: prerequisite validation
+# OmaSecBoot: prerequisite validation
 
 check_root() {
-  [[ $EUID -eq 0 ]] || die "Root required. Run: ${BOLD}sudo omarchy-secureboot ${1:-}${NC}"
+  [[ $EUID -eq 0 ]] || die "Root required. Run: ${BOLD}sudo omasecboot ${1:-}${NC}"
 }
 
 check_core_deps() {

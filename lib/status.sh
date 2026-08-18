@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy-secureboot: status display and file verification
+# OmaSecBoot: status display and file verification
 
 strip_outer_quotes() {
   local value="$1"
@@ -324,7 +324,7 @@ show_status() {
       pass "Limine enrollment hooks present"
       if limine_default_has_command "COMMANDS_BEFORE_SAVE" "limine-reset-enroll" \
         || limine_default_has_command "COMMANDS_AFTER_SAVE" "limine-enroll-config"; then
-        warn "deprecated COMMANDS_* enrollment entries remain; run ${BOLD}sudo omarchy-secureboot sign${NC} to clean them"
+        warn "deprecated COMMANDS_* enrollment entries remain; run ${BOLD}sudo omasecboot sign${NC} to clean them"
       fi
     else
       warn "Limine enrollment hooks missing; checking deprecated COMMANDS_* fallback"
@@ -431,13 +431,13 @@ show_status() {
       pass "Windows boot entry in limine.conf (firmware BootNext)"
     else
       warn "Legacy Windows chainload entry in limine.conf may trigger BitLocker"
-      echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} to upgrade it${NC}"
+      echo -e "  ${DIM}Run ${BOLD}sudo omasecboot sign${NC}${DIM} to upgrade it${NC}"
     fi
   else
     if [[ -f "${STATE_DIR}/windows-enabled" ]]; then
       echo -e "  ${DIM}Windows boot entry missing from limine.conf (will be restored by sign)${NC}"
     else
-      echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add)${NC}"
+      echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omasecboot windows${NC}${DIM} to add)${NC}"
     fi
   fi
 
@@ -448,7 +448,7 @@ show_status() {
     while IFS= read -r line; do
       echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
     done <<< "$unmanaged_windows_chainloads"
-    echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot windows${NC}${DIM} to add the firmware BootNext entry, then remove any duplicate chainload entry if needed.${NC}"
+    echo -e "  ${DIM}Run ${BOLD}sudo omasecboot windows${NC}${DIM} to add the firmware BootNext entry, then remove any duplicate chainload entry if needed.${NC}"
   fi
 
   # Tracked files (root only)
@@ -528,7 +528,7 @@ show_status() {
           echo -e "    ${YELLOW}!${NC} $file"
         done
         if printf '%s\n' "${untracked[@]}" | grep -Eq '\.efi_(sha1|sha256|b3|blake3|xxh|xxhash)_'; then
-          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. The Limine post-hook should repair this after upstream boot updates; run ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} if you need an immediate manual repair.${NC}"
+          echo -e "  ${DIM}Snapshot UKIs exist outside sbctl's database. The Limine post-hook should repair this after upstream boot updates; run ${BOLD}sudo omasecboot sign${NC}${DIM} if you need an immediate manual repair.${NC}"
         fi
         all_ok=false
         files_ok=false
@@ -542,7 +542,7 @@ show_status() {
       for stale_file in "${missing_tracked[@]}"; do
         echo -e "    ${YELLOW}!${NC} $stale_file"
       done
-      echo -e "  ${DIM}Run ${BOLD}sudo omarchy-secureboot cleanup${NC}${DIM} or ${BOLD}sudo omarchy-secureboot sign${NC}${DIM} before the next package transaction.${NC}"
+      echo -e "  ${DIM}Run ${BOLD}sudo omasecboot cleanup${NC}${DIM} or ${BOLD}sudo omasecboot sign${NC}${DIM} before the next package transaction.${NC}"
       all_ok=false
       files_ok=false
     fi
@@ -552,12 +552,12 @@ show_status() {
       if $files_ok; then
         pass "All tracked files signed and all discovered EFI files enrolled"
       else
-        warn "Some files failed. Run: ${BOLD}sudo omarchy-secureboot sign${NC}"
+        warn "Some files failed. Run: ${BOLD}sudo omasecboot sign${NC}"
       fi
     fi
   else
     echo
-    echo -e "  ${DIM}Run as root for file verification: ${BOLD}sudo omarchy-secureboot status${NC}"
+    echo -e "  ${DIM}Run as root for file verification: ${BOLD}sudo omasecboot status${NC}"
   fi
   echo
 

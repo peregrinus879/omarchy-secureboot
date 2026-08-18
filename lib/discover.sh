@@ -1,5 +1,5 @@
 #!/bin/bash
-# omarchy-secureboot: EFI file discovery and sbctl database queries
+# OmaSecBoot: EFI file discovery and sbctl database queries
 
 # Find all signable EFI files under the ESP.
 # Excludes Microsoft files (trusted via -m enrollment), 32-bit bootloader, backups.
