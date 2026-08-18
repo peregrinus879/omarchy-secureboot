@@ -1,13 +1,11 @@
 #!/bin/bash
 # OmaSecBoot: shared constants and output helpers
 
-# shellcheck disable=SC2034 # Constants are consumed by sourced lib files.
-readonly VERSION="2.0.0"
 readonly ESP="/boot"
 # shellcheck disable=SC2034 # Used by sourced lib files.
 readonly LIMINE_CONF="${ESP}/limine.conf"
 # shellcheck disable=SC2034 # Used by sourced lib files.
-readonly STATE_DIR="/var/lib/omarchy-secureboot"
+readonly STATE_DIR="/var/lib/omasecboot"
 # Must match BOOT_PARTITION_LOCK in limine-entry-tool and limine-snapper-sync,
 # which own this mutex.
 readonly LIMINE_LOCK_FILE="/run/lock/boot-partition.lock"
@@ -48,7 +46,7 @@ with_repair_lock() {
 }
 
 with_limine_lock() {
-  [[ "${OMARCHY_SECUREBOOT_IN_LIMINE_HOOK:-}" == true ]] && return 0
+  [[ "${OMASECBOOT_IN_LIMINE_HOOK:-}" == true ]] && return 0
 
   command -v flock >/dev/null 2>&1 \
     || die "flock not installed. Run: ${BOLD}sudo pacman -S util-linux${NC}"

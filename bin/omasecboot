@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # OmaSecBoot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.
-# Ongoing maintenance handled by zz-omarchy-secureboot-cleanup.hook, zz-sbctl.hook,
-# zzz-omarchy-secureboot.hook, and the Limine post-hook zzz-omarchy-secureboot-sign.
+# Ongoing maintenance handled by zz-omasecboot-cleanup.hook, zz-sbctl.hook,
+# zzz-omasecboot.hook, and the Limine post-hook zzz-omasecboot-sign.
 
 # Resolve lib directory (handles symlinks from /usr/local/bin -> /usr/local/lib)
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib/omarchy-secureboot"
+LIB_DIR="${SCRIPT_DIR}/../lib/omasecboot"
 # Fallback for development (running from repo checkout)
 [[ -d "$LIB_DIR" ]] || LIB_DIR="${SCRIPT_DIR}/../lib"
 
@@ -149,10 +149,10 @@ cmd_status() {
 }
 
 cmd_help() {
-  header "OmaSecBoot"
+  header "Command Help"
   echo "  Secure Boot signing, Limine enrollment, pacman hooks, and Windows BootNext handoff for Omarchy."
-  echo -e "  After setup, ${DIM}zz-omarchy-secureboot-cleanup.hook${NC}, ${DIM}zz-sbctl.hook${NC}, ${DIM}zzz-omarchy-secureboot.hook${NC},"
-  echo -e "  and Limine post-hook ${DIM}zzz-omarchy-secureboot-sign${NC} keep Secure Boot state repaired."
+  echo -e "  After setup, ${DIM}zz-omasecboot-cleanup.hook${NC}, ${DIM}zz-sbctl.hook${NC}, ${DIM}zzz-omasecboot.hook${NC},"
+  echo -e "  and Limine post-hook ${DIM}zzz-omasecboot-sign${NC} keep Secure Boot state repaired."
   echo
   echo -e "  ${BOLD}Usage${NC}   sudo omasecboot <command>"
   echo
@@ -164,7 +164,6 @@ cmd_help() {
   echo "    sign        Reassert Limine settings, repair config drift, and sign EFI files"
   echo "    cleanup     Remove stale sbctl tracked-file entries"
   echo "    help        Show this help"
-  echo "    version     Show version"
   echo
   echo -e "  ${DIM}Note:${NC} This tool keeps ${BOLD}ENABLE_VERIFICATION=no${NC} for Omarchy's EFI UKI flow while using Limine config enrollment."
   echo -e "        ${BOLD}status${NC} warns if Limine 12 Secure Boot path-hash enforcement would affect non-EFI paths."
@@ -198,7 +197,6 @@ main() {
     sign)     cmd_sign ;;
     status)   cmd_status ;;
     help|--help|-h)  cmd_help ;;
-    version|--version|-v) echo "omasecboot ${VERSION}" ;;
     *)
       cmd_help
       if [[ -n "${1:-}" ]]; then

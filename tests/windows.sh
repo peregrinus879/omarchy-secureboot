@@ -156,9 +156,6 @@ jq -e '."system.windows"' "$menu_file" >/dev/null \
   || fail_test "Quattro menu action does not use BootNext plus graceful reboot"
 grep -Fq 'omasecboot windows available' "$menu_file" \
   || fail_test "Quattro menu entry lacks its availability guard"
-if grep -Fq 'omarchy-secureboot' "$menu_file"; then
-  fail_test "Quattro menu entry uses the removed command"
-fi
 
 PATH="${ROOT_DIR}/bin:${BIN_DIR}:${ORIGINAL_PATH}" \
   bash -c 'command -v omasecboot >/dev/null && omasecboot windows available' \

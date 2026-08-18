@@ -226,10 +226,10 @@ show_status() {
 
   # Hook status
   echo
-  if [[ -f /etc/pacman.d/hooks/zz-omarchy-secureboot-cleanup.hook ]]; then
-    pass "zz-omarchy-secureboot-cleanup.hook present (stale entry cleanup)"
+  if [[ -f /etc/pacman.d/hooks/zz-omasecboot-cleanup.hook ]]; then
+    pass "zz-omasecboot-cleanup.hook present (stale entry cleanup)"
   else
-    warn "zz-omarchy-secureboot-cleanup.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
+    warn "zz-omasecboot-cleanup.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
   fi
 
   if [[ -f /usr/share/libalpm/hooks/zz-sbctl.hook ]]; then
@@ -238,16 +238,16 @@ show_status() {
     warn "zz-sbctl.hook missing. Run: ${BOLD}sudo pacman -S sbctl${NC}"
   fi
 
-  if [[ -f /etc/pacman.d/hooks/zzz-omarchy-secureboot.hook ]]; then
-    pass "zzz-omarchy-secureboot.hook present (package repair)"
+  if [[ -f /etc/pacman.d/hooks/zzz-omasecboot.hook ]]; then
+    pass "zzz-omasecboot.hook present (package repair)"
   else
-    warn "zzz-omarchy-secureboot.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
+    warn "zzz-omasecboot.hook missing. Run: ${BOLD}sudo make install${NC} from repo"
   fi
 
-  if [[ -x /etc/boot/hooks/post.d/zzz-omarchy-secureboot-sign ]]; then
-    pass "zzz-omarchy-secureboot-sign present (Limine post-repair)"
+  if [[ -x /etc/boot/hooks/post.d/zzz-omasecboot-sign ]]; then
+    pass "zzz-omasecboot-sign present (Limine post-repair)"
   else
-    warn "zzz-omarchy-secureboot-sign missing. Run: ${BOLD}sudo make install${NC} from repo"
+    warn "zzz-omasecboot-sign missing. Run: ${BOLD}sudo make install${NC} from repo"
   fi
 
   if command -v systemctl >/dev/null 2>&1; then
@@ -426,13 +426,16 @@ show_status() {
     echo -e "  ${DIM}No Windows Boot Manager found (check BIOS boot settings)${NC}"
   fi
 
-  if grep -q "omarchy-secureboot:windows" "$LIMINE_CONF" 2>/dev/null; then
-    if grep -A4 "omarchy-secureboot:windows" "$LIMINE_CONF" | grep -q "protocol: efi_boot_entry"; then
+  if grep -Fq "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
+    if grep -F -A4 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "protocol: efi_boot_entry"; then
       pass "Windows boot entry in limine.conf (firmware BootNext)"
     else
-      warn "Legacy Windows chainload entry in limine.conf may trigger BitLocker"
+      warn "Managed Windows entry in limine.conf needs repair"
       echo -e "  ${DIM}Run ${BOLD}sudo omasecboot sign${NC}${DIM} to upgrade it${NC}"
     fi
+  elif grep -Fq "$LEGACY_WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
+    warn "Windows boot entry marker needs migration"
+    echo -e "  ${DIM}Run ${BOLD}sudo omasecboot sign${NC}${DIM} to migrate it${NC}"
   else
     if [[ -f "${STATE_DIR}/windows-enabled" ]]; then
       echo -e "  ${DIM}Windows boot entry missing from limine.conf (will be restored by sign)${NC}"

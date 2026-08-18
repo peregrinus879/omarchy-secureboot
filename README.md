@@ -2,7 +2,7 @@
 
 **[Omarchy](https://omarchy.com) Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.**
 
-Creates signing keys, configures Limine for Omarchy's current Secure Boot model, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu via firmware BootNext handoff. After setup, a cleanup hook (`zz-omarchy-secureboot-cleanup.hook`) removes stale sbctl entries before sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files, a repair hook (`zzz-omarchy-secureboot.hook`) discovers new EFI files after relevant package transactions, and a Limine post-hook (`zzz-omarchy-secureboot-sign`) repairs state after upstream Limine tools finish changing boot files.
+Creates signing keys, configures Limine for Omarchy's current Secure Boot model, signs EFI files, enrolls keys into firmware, and adds Windows to the Limine boot menu via firmware BootNext handoff. After setup, a cleanup hook (`zz-omasecboot-cleanup.hook`) removes stale sbctl entries before sbctl's pacman hook (`zz-sbctl.hook`) re-signs known files, a repair hook (`zzz-omasecboot.hook`) discovers new EFI files after relevant package transactions, and a Limine post-hook (`zzz-omasecboot-sign`) repairs state after upstream Limine tools finish changing boot files.
 
 ## Why This Tool
 
@@ -69,7 +69,9 @@ If your Windows installation uses BitLocker drive encryption:
 
 ## Installation
 
-OmaSecBoot installs the `omasecboot` command. Installation removes the obsolete `omarchy-secureboot` executable while retaining the established hook filenames, library path, and state path.
+`OmaSecBoot` is the product name; `omasecboot` is the command, repository slug, and machine-facing namespace.
+
+This migration release installs the canonical namespace, preserves an existing Windows opt-in marker, and removes the earlier `omarchy-secureboot` command, hooks, library, and state paths after their replacements exist. Run `sudo omasecboot sign` once after upgrading to migrate the managed marker in active `limine.conf`.
 
 ```bash
 git clone https://github.com/peregrinus879/omasecboot.git ~/Projects/eyrie/omasecboot
@@ -79,11 +81,11 @@ sudo make install
 
 Installs to:
 - `/usr/local/bin/omasecboot`
-- `/usr/local/lib/omarchy-secureboot/`
-- `/etc/pacman.d/hooks/zz-omarchy-secureboot-cleanup.hook`
-- `/etc/pacman.d/hooks/zzz-omarchy-secureboot.hook`
-- `/etc/boot/hooks/post.d/zzz-omarchy-secureboot-sign`
-- `/var/lib/omarchy-secureboot/`
+- `/usr/local/lib/omasecboot/`
+- `/etc/pacman.d/hooks/zz-omasecboot-cleanup.hook`
+- `/etc/pacman.d/hooks/zzz-omasecboot.hook`
+- `/etc/boot/hooks/post.d/zzz-omasecboot-sign`
+- `/var/lib/omasecboot/`
 
 To uninstall: `sudo make uninstall`
 
@@ -153,15 +155,11 @@ Repairs Linux-side Secure Boot state after updates by enforcing the Limine verif
 
 ### `cleanup`
 
-Removes stale sbctl tracked-file entries after validating that `/boot` is mounted as the FAT32 ESP. Used by `zz-omarchy-secureboot-cleanup.hook` before `zz-sbctl.hook`; run manually if `status` reports stale tracked files.
+Removes stale sbctl tracked-file entries after validating that `/boot` is mounted as the FAT32 ESP. Used by `zz-omasecboot-cleanup.hook` before `zz-sbctl.hook`; run manually if `status` reports stale tracked files.
 
 ### `help`
 
 Prints usage and the five-step workflow.
-
-### `version`
-
-Prints the version number.
 
 ## How It Works
 
@@ -196,12 +194,12 @@ Package-triggered repair uses pacman hooks. Limine-originated repair uses Limine
 
 | Trigger | Scope | Purpose |
 |---|---|---|
-| `zz-omarchy-secureboot-cleanup.hook` (ours) | Same Path triggers as `zz-sbctl.hook` | Removes stale sbctl entries before sbctl re-signs |
+| `zz-omasecboot-cleanup.hook` (ours) | Same Path triggers as `zz-sbctl.hook` | Removes stale sbctl entries before sbctl re-signs |
 | `zz-sbctl.hook` (sbctl built-in) | Boot/EFI path changes | Re-signs files already in sbctl's database |
-| `zzz-omarchy-secureboot.hook` (ours) | `linux*`, `limine*`, `snapper*` packages | Runs lightweight repo repair after relevant package updates |
-| `zzz-omarchy-secureboot-sign` (ours) | Limine post-hook | Runs lightweight repo repair after upstream Limine tools finish changing boot files |
+| `zzz-omasecboot.hook` (ours) | `linux*`, `limine*`, `snapper*` packages | Runs lightweight repo repair after relevant package updates |
+| `zzz-omasecboot-sign` (ours) | Limine post-hook | Runs lightweight repo repair after upstream Limine tools finish changing boot files |
 
-Pacman hook ordering relies on filename sort: `zz-omarchy-secureboot-cleanup` < `zz-sbctl` < `zzz-omarchy-secureboot`. The cleanup hook mirrors `zz-sbctl.hook`'s `Type = Path` triggers so it fires in the same transactions, refuses to run unless `/boot` is the mounted FAT32 ESP, and removes stale tracked entries before sbctl runs. The repair hook uses `Type = Package` triggers for `linux*`, `limine*`, and `snapper*`. The Limine post-hook is named `zzz-omarchy-secureboot-sign` so it runs after Limine's packaged `90-limine-enroll-config` post-hook.
+Pacman hook ordering relies on filename sort: `zz-omasecboot-cleanup` < `zz-sbctl` < `zzz-omasecboot`. The cleanup hook mirrors `zz-sbctl.hook`'s `Type = Path` triggers so it fires in the same transactions, refuses to run unless `/boot` is the mounted FAT32 ESP, and removes stale tracked entries before sbctl runs. The repair hook uses `Type = Package` triggers for `linux*`, `limine*`, and `snapper*`. The Limine post-hook is named `zzz-omasecboot-sign` so it runs after Limine's packaged `90-limine-enroll-config` post-hook.
 
 **Why this matters:** The current Omarchy stack works with three separate pieces:
 
@@ -239,20 +237,20 @@ The package-triggered maintenance chain:
 Kernel update
   -> mkinitcpio builds UKI
   -> limine-entry-tool updates limine.conf
-  -> zz-omarchy-secureboot-cleanup.hook removes stale sbctl entries
+  -> zz-omasecboot-cleanup.hook removes stale sbctl entries
   -> zz-sbctl.hook re-signs UKI (already in database)
-  -> zzz-omarchy-secureboot.hook ensures Windows boot entry and signs new files
+  -> zzz-omasecboot.hook ensures Windows boot entry and signs new files
 
 Snapshot creation or cleanup
   -> limine-snapper-sync copies UKIs to snapshot locations and rewrites snapshot entries
   -> limine-entry-tool hooks re-enroll and re-sign limine_x64.efi
-  -> zzz-omarchy-secureboot-sign discovers and signs new snapshot UKIs
+  -> zzz-omasecboot-sign discovers and signs new snapshot UKIs
 
 Bootloader update
   -> Limine hook copies fresh bootloader files
-  -> zz-omarchy-secureboot-cleanup.hook removes stale sbctl entries
+  -> zz-omasecboot-cleanup.hook removes stale sbctl entries
   -> zz-sbctl.hook re-signs bootloader files
-  -> zzz-omarchy-secureboot.hook ensures Windows boot entry and signs new files
+  -> zzz-omasecboot.hook ensures Windows boot entry and signs new files
 ```
 
 ### Code Structure
@@ -321,8 +319,8 @@ This re-enrolls the current config checksum, restores the required `/etc/default
 
 This warning is informational. It refers to Omarchy's upstream snapshot service, not this repo's core commands.
 
-- Package-triggered repair still works through `zz-omarchy-secureboot-cleanup.hook` and `zzz-omarchy-secureboot.hook`.
-- Limine-originated repair still works through `/etc/boot/hooks/post.d/zzz-omarchy-secureboot-sign`.
+- Package-triggered repair still works through `zz-omasecboot-cleanup.hook` and `zzz-omasecboot.hook`.
+- Limine-originated repair still works through `/etc/boot/hooks/post.d/zzz-omasecboot-sign`.
 - Manual repair still works through `sudo omasecboot sign`.
 
 ### `status` reports untracked snapshot UKIs
@@ -398,7 +396,7 @@ From Linux, check for duplicate or unmanaged Windows boot paths and whether Wind
 sudo omasecboot status
 sudo efibootmgr -v | grep -i 'bootmgfw\.efi'
 findmnt -t ntfs3,ntfs,fuseblk
-grep -nA4 -B2 'omarchy-secureboot:windows\|protocol: efi\|protocol: efi_chainload\|protocol: uefi\|bootmgfw' /boot/limine.conf
+grep -nA4 -B2 'omasecboot:windows\|protocol: efi\|protocol: efi_chainload\|protocol: uefi\|bootmgfw' /boot/limine.conf
 ```
 
 From Windows Admin PowerShell or Command Prompt, check the dirty bit and recent disk-check logs:

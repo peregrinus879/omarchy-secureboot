@@ -2,7 +2,7 @@
 
 OmaSecBoot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff for Omarchy.
 
-Command boundary: `omasecboot` is the sole user command, and `make install` removes the obsolete `omarchy-secureboot` executable. Existing hook filenames, the library path, `/var/lib` state path, Windows marker, and Limine-hook sentinel remain deployment contracts; do not rename them without a stateful migration.
+Naming boundary: `OmaSecBoot` is the product/display name; `omasecboot` is the sole user command and machine-facing namespace. This migration release removes the earlier `omarchy-secureboot` command, hooks, library, state, marker, and sentinel only after their canonical replacements exist and the durable Windows opt-in is preserved.
 
 ## Load Map
 
@@ -15,11 +15,12 @@ Command boundary: `omasecboot` is the sole user command, and `make install` remo
 - `README.md` - User documentation, design philosophy, troubleshooting
 - `bin/omasecboot` - Entry point and command dispatcher
 - `lib/*.sh` - Modular function libraries (common, checks, discover, sign, enroll, windows, status)
-- `pacman-hooks/zz-omarchy-secureboot-cleanup.hook` - Pacman hook that removes stale sbctl entries before `zz-sbctl.hook` runs
-- `pacman-hooks/zzz-omarchy-secureboot.hook` - Pacman hook that runs `sign` after kernel, bootloader, or snapshot-related package updates
-- `limine-hooks/zzz-omarchy-secureboot-sign` - Limine post-hook that runs `sign` after upstream Limine tools mutate boot files
+- `pacman-hooks/zz-omasecboot-cleanup.hook` - Pacman hook that removes stale sbctl entries before `zz-sbctl.hook` runs
+- `pacman-hooks/zzz-omasecboot.hook` - Pacman hook that runs `sign` after kernel, bootloader, or snapshot-related package updates
+- `limine-hooks/zzz-omasecboot-sign` - Limine post-hook that runs `sign` after upstream Limine tools mutate boot files
 - `tests/install.sh` - Staged install, upgrade, hook-target, and uninstall contract checks
 - `tests/windows.sh` - Hermetic Windows firmware handoff and Quattro menu contract checks
+- `tests/windows-migration.sh` - Hermetic managed-marker migration and idempotence checks
 - `omarchy/omarchy-menu.jsonc` - Quattro user-menu fragment for graceful reboot-to-Windows handoff
 - `docs/maintenance.md` - On-demand sources, compatibility findings, removal triggers, and deferred work
 - `Makefile` - Install/uninstall targets
@@ -41,7 +42,7 @@ sbctl, jq, gum (interactive only). Omarchy provides the rest (`limine-update`, `
 
 ## Operational Invariants
 
-- Preserve the command and deployment contracts above. Do not add state-path migrations unless deployed state requires one.
+- Preserve the naming and deployment contracts above. Temporary migration code exists only until the known host passes its namespace gate.
 - `setup` and `sign` maintain signed EFI binaries plus enrolled `limine.conf` checksums with `ENABLE_VERIFICATION=no` and `ENABLE_ENROLL_LIMINE_CONFIG=yes`. Keep `ensure_limine_secure_boot_settings` in the sign path and keep its Quattro write target at `/etc/default/limine`, outside package-owned drop-ins.
 - Do not reintroduce Limine `path: ...#hash` management while Omarchy boots UKIs through `protocol: efi`. Warn on incompatible non-EFI paths instead of mutating them automatically.
 - limine-snapper-sync snapshot filenames can end in `.efi_sha256_<hash>`, `.efi_sha1_*`, `.efi_b3_*`, or `.efi_xxh_*`; that suffix belongs to the filename and is not a Limine path hash.
@@ -53,7 +54,7 @@ sbctl, jq, gum (interactive only). Omarchy provides the rest (`limine-update`, `
 - Keep `reenroll_limine_config_if_changed()` in `cmd_sign()` so repo-restored `limine.conf` changes are enrolled without duplicating upstream enrollment.
 - Prefer `sbctl list-files` as the tracked-file source of truth. Direct database reads are fallback and cleanup/compatibility paths; prefer `files.db` over `files.json`.
 - Retain `save_sbctl_file_entry()` while Arch ships the affected sbctl release; its evidence and removal trigger live in `docs/maintenance.md`.
-- Pacman PostTransaction ordering must remain `zz-omarchy-secureboot-cleanup` before `zz-sbctl` before `zzz-omarchy-secureboot`. The cleanup hook mirrors `zz-sbctl.hook` path triggers; other hooks may sort between them. Package repair and the Limine post-hook cover different mutation sources and are not redundant.
+- Pacman PostTransaction ordering must remain `zz-omasecboot-cleanup` before `zz-sbctl` before `zzz-omasecboot`. The cleanup hook mirrors `zz-sbctl.hook` path triggers; other hooks may sort between them. Package repair and the Limine post-hook cover different mutation sources and are not redundant.
 - Windows uses `protocol: efi_boot_entry` so firmware BootNext launches `bootmgfw.efi` without measuring mutable `limine_x64.efi` in the Windows boot chain. Detect Windows by loader path, not firmware label. `windows bootnext` only arms BootNext; `windows reboot` arms it and reboots.
 - Keep enrollment and signing in interactive `add_windows_boot_entry()` so `windows setup` completes the full mutation cycle in one invocation.
 - `status` may identify Quattro's native `protocol: efi` Windows chainloads but never removes them automatically. Prefer minimal repo-owned automation over replacing mkinitcpio, limine-entry-tool, or limine-snapper-sync behavior.
@@ -63,7 +64,7 @@ sbctl, jq, gum (interactive only). Omarchy provides the rest (`limine-update`, `
 ## Post-Change Verification
 
 - Run `make test` after code, hook, install, or menu changes.
-- Run `bash -n bin/omasecboot lib/*.sh limine-hooks/zzz-omarchy-secureboot-sign tests/*.sh` and `shellcheck` over the same shell files.
+- Run `bash -n bin/omasecboot lib/*.sh limine-hooks/zzz-omasecboot-sign tests/*.sh` and `shellcheck` over the same shell files.
 - Parse `omarchy/omarchy-menu.jsonc` with `jq` after menu changes.
 
 ## Conventions

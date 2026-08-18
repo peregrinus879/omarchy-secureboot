@@ -1,7 +1,8 @@
 #!/bin/bash
 # OmaSecBoot: Windows dual-boot via firmware BootNext
 
-readonly WINDOWS_ENTRY_MARKER="# omarchy-secureboot:windows"
+readonly WINDOWS_ENTRY_MARKER="# omasecboot:windows"
+readonly LEGACY_WINDOWS_ENTRY_MARKER="# omarchy-secureboot:windows"
 
 # Find the Windows Boot Manager firmware entry by loader path.
 # Prints "bootnum<TAB>entry_name" or returns 1 if not found.
@@ -26,7 +27,8 @@ find_windows_boot_entry() {
 }
 
 windows_entry_is_configured() {
-  grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null
+  grep -Fq "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null \
+    || grep -Fq "$LEGACY_WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null
 }
 
 # Write the Windows efi_boot_entry block to limine.conf.
@@ -49,7 +51,9 @@ update_windows_boot_entry() {
     return 1
   }
 
-  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" -v entry_name="$entry_name" '
+  if ! awk -v marker="$WINDOWS_ENTRY_MARKER" \
+    -v legacy_marker="$LEGACY_WINDOWS_ENTRY_MARKER" \
+    -v entry_name="$entry_name" '
     function print_block() {
       print ""
       print marker
@@ -65,7 +69,7 @@ update_windows_boot_entry() {
       inserted = 0
     }
 
-    $0 == marker {
+    $0 == marker || $0 == legacy_marker {
       if (!inserted) {
         print_block()
       }
@@ -160,12 +164,12 @@ ensure_windows_boot_entry() {
   # Act if user opted in via 'windows' command, or if a repo-managed block
   # already exists in limine.conf (a block can exist without the marker file)
   if [[ ! -f "${STATE_DIR}/windows-enabled" ]]; then
-    grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null || return 0
+    windows_entry_is_configured || return 0
   fi
 
   # Already present with correct protocol
-  if grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null \
-     && grep -A4 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "protocol: efi_boot_entry"; then
+  if grep -Fq "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null \
+     && grep -F -A4 "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" | grep -q "protocol: efi_boot_entry"; then
     return 0
   fi
 
