@@ -51,12 +51,15 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 ### Bootloader
 
 - [Limine Bootloader](https://github.com/limine-bootloader/limine) - GitHub repo
-- [Limine CONFIG.md](https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md) - Configuration reference (chainload, `guid(...):/path` paths, `efi_chainload` protocol)
+- [Limine CONFIG.md](https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md) - Configuration reference (`efi`, `efi_boot_entry`, and `guid(...):/path` semantics)
 - [Arch Wiki: Limine](https://wiki.archlinux.org/title/Limine) - Arch-specific Limine setup
 
 ### Omarchy
 
 - [The Omarchy Manual](https://learn.omacom.io/2/the-omarchy-manual) - Setup guides, workflows
+- [Omarchy Quattro dual boot](https://omarchy.org/manual/dual-boot-install/) - Free-space installation and `limine-scan` workflow
+- [Omarchy AI](https://omarchy.org/manual/ai/) - Installed agent skills and customization model
+- [Omarchy 4.0.0 release](https://github.com/basecamp/omarchy/releases/tag/v4.0.0) - Quattro feature and architecture baseline
 - [basecamp/omarchy](https://github.com/basecamp/omarchy) - Main repo (install scripts, Limine config, boot chain)
 - [omacom-io/omarchy-pkgs](https://github.com/omacom-io/omarchy-pkgs) - Package builds (limine-mkinitcpio-hook, limine-snapper-sync)
 
@@ -75,6 +78,7 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 ### Dual Boot
 
 - [Arch Wiki: Dual boot with Windows](https://wiki.archlinux.org/title/Dual_boot_with_Windows) - EFI considerations, partition layout, bootloader discovery
+- [Microsoft BitLocker FAQ](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/faq) - Suspension, recovery, and Secure Boot measurement guidance
 
 ## Technical Notes
 
@@ -82,7 +86,8 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 - **Limine Secure Boot model**: `setup` and `sign` ensure `ENABLE_VERIFICATION=no` and `ENABLE_ENROLL_LIMINE_CONFIG=yes`. Current Limine packages provide `/etc/boot/hooks/pre.d/10-limine-reset-enroll` and `/etc/boot/hooks/post.d/90-limine-enroll-config`. This repo signs EFI binaries with sbctl while keeping Omarchy's current path-hash generation disabled and limine.conf checksum enrollment enabled.
 - **Limine 12 compatibility**: Limine 12 can enforce BLAKE2B hashes on non-EFI loaded paths when Secure Boot and config checksum enrollment are both active. Omarchy boots UKIs via `protocol: efi`, which is exempt because firmware Secure Boot verifies EFI binaries. Limine 12 expects interface colors as `RRGGBB` values. Do not add automatic path-hash rewriting unless Omarchy moves to non-EFI loaded paths or explicitly enables that model. `status` warns proactively about non-EFI path hashes and color values instead.
 - **Limine config indentation**: Limine strips leading whitespace, and limine-entry-tool/limine-snapper-sync generate indented sub-entries (`  //linux`, `     ////linux`). Entry-boundary detection in `status.sh` awk parsers must match trimmed lines, not column-0 anchors.
-- **Omarchy Quattro (4.0) layout**: Omarchy ships as pacman packages (`omarchy`, `omarchy-settings`) under `/usr/share/omarchy`. Limine settings live in the `/etc/limine-entry-tool.d/{omarchy-defaults,omarchy-uki}.conf` drop-ins (including `CUSTOM_UKI_NAME="omarchy"`); `/etc/default/limine` is a read layer carrying `root=` and this repo's Secure Boot settings. Omarchy ships no sbctl or Secure Boot logic; this repo is the gap-filler. The `00-omarchy-update-guard.hook` blocks direct `pacman -Syu` unless `OMARCHY_UPDATE_PACMAN=1`; it sorts before `zz-*` and leaves the hook ordering invariant intact.
+- **Omarchy Quattro (4.0) layout**: Omarchy ships as pacman packages (`omarchy`, `omarchy-settings`) under `/usr/share/omarchy`. Limine settings live in the `/etc/limine-entry-tool.d/{omarchy-defaults,omarchy-uki}.conf` drop-ins (including `CUSTOM_UKI_NAME="omarchy"`); `/etc/default/limine` is a read layer carrying `root=` and this repo's Secure Boot settings. Omarchy does not provision sbctl keys or expose an end-to-end Secure Boot workflow. Its required limine-entry-tool package provides scanner, enrollment, signing, and locking primitives that this repo integrates with. The `00-omarchy-update-guard.hook` blocks direct `pacman -Syu` unless `OMARCHY_UPDATE_PACMAN=1`; it sorts before `zz-*` and leaves the hook ordering invariant intact.
+- **Quattro native dual boot**: Quattro supports free-space installation alongside Windows and documents `limine-scan`. limine-entry-tool 1.37.1 writes scanner entries as `protocol: efi` plus `path:`. OmaSecBoot does not replace the installation flow; it specializes the boot path with `efi_boot_entry`, persistent repair, direct BootNext commands, and Secure Boot lifecycle management. `status` identifies native-form chainloads but never removes them automatically.
 - **limine-entry-tool hooks**: `/etc/boot/hooks/post.d/89-warn-missing-file-hashes` can warn on Limine 12 when Secure Boot and `ENABLE_ENROLL_LIMINE_CONFIG` are active without `ENABLE_VERIFICATION=yes`; that is this repo's deliberate model, the warning stays silent for EFI-exempt UKI builds on current versions, and the hook sorts before `zzz-omarchy-secureboot-sign`. limine-entry-tool reads sbctl state via JSON.
 - **Limine lock**: `with_limine_lock` locks `/run/lock/boot-partition.lock`, the `BOOT_PARTITION_LOCK` mutex owned by limine-entry-tool and limine-snapper-sync. The path must match what those binaries embed or the serialization is a no-op.
 - **EFI entry handling**: Omarchy boots UKIs via `protocol: efi`. Windows uses `protocol: efi_boot_entry`, which sets firmware BootNext and triggers a reboot so Windows boots directly from `bootmgfw.efi` without going through `limine_x64.efi`. This avoids TPM PCR drift caused by `limine-snapper-sync` re-enrolling `limine_x64.efi` on every snapshot change. Detection uses `efibootmgr -v` matching on the `bootmgfw.efi` loader path, not label. `windows setup` configures Limine, `windows bootnext` only arms firmware BootNext, and `windows reboot` arms it and reboots immediately. Windows `chkdsk`/drive-check prompts are separate from BitLocker recovery; diagnose dirty bit, interrupted Windows shutdown/update, Fast Startup/hibernation, duplicate firmware entries, or NTFS mounts rather than changing the Secure Boot path first.
@@ -99,8 +104,8 @@ Before changing Secure Boot flow, sbctl tracking behavior, Limine config semanti
 ## Decision Rationale
 
 - Do not reintroduce Limine `path: ...#hash` management while Omarchy's working stack still depends on `ENABLE_VERIFICATION=no` and UKI EFI paths. For Limine 12, warn on incompatible non-EFI paths rather than mutating them automatically.
-- Do not add repo migration code unless multiple deployed installs require it. For this project, a one-user local transition did not justify permanent migration logic.
-- Prefer minimal repo-owned automation over replacing Omarchy behavior. The repo fills dual-boot/Secure-Boot gaps; it should not compete with mkinitcpio, limine-entry-tool, or limine-snapper-sync.
+- Do not add state-path migrations unless multiple deployed installs require them. The retained hook, library, state, marker, and sentinel names preserve deployed state without migration code.
+- Prefer minimal repo-owned automation over replacing Omarchy behavior. The repo fills dual-boot/Secure-Boot gaps around Quattro's native flow; it should not compete with mkinitcpio, limine-entry-tool, or limine-snapper-sync.
 - Prefer the Limine post-hook for Limine-originated drift.
 - Prefer `protocol: efi_boot_entry` over `protocol: efi` for Windows. The chainload protocol measures `limine_x64.efi` in TPM PCR, and `limine-snapper-sync` mutates that binary on every snapshot change, making PCR values unstable for BitLocker. The `efi_boot_entry` protocol triggers a firmware reboot, keeping `limine_x64.efi` out of the Windows boot measurement chain.
 - Do not remove `sign_all_efi()` from `cmd_sign()`. `zz-sbctl.hook` only re-signs files already in sbctl's database. `sign_all_efi()` discovers new files (especially snapshot UKIs from `limine-snapper-sync`) and registers them. That is the core gap this repo fills. Most files are "already signed" (skipped); it only does work for genuinely new files.
