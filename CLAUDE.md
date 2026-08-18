@@ -1,4 +1,4 @@
-# CLAUDE.md - omarchy-secureboot
+# CLAUDE.md - OmaSecBoot
 
 @AGENTS.md
 

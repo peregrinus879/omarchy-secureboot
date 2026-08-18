@@ -1,4 +1,4 @@
-# omarchy-secureboot
+# OmaSecBoot
 
 **[Omarchy](https://omarchy.com) Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.**
 
@@ -66,9 +66,11 @@ If your Windows installation uses BitLocker drive encryption:
 
 ## Installation
 
+OmaSecBoot installs the stable `omarchy-secureboot` command and matching hook, library, and state paths as compatibility interfaces.
+
 ```bash
-git clone https://github.com/peregrinus879/omarchy-secureboot.git
-cd omarchy-secureboot
+git clone https://github.com/peregrinus879/omasecboot.git ~/Projects/eyrie/omasecboot
+cd ~/Projects/eyrie/omasecboot
 sudo make install
 ```
 

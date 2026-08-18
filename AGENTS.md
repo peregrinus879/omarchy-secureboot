@@ -1,6 +1,8 @@
-# AGENTS.md - omarchy-secureboot
+# AGENTS.md - OmaSecBoot
 
-Omarchy Secure Boot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff.
+OmaSecBoot: sbctl signing, Limine enrollment, pacman hook, and Windows BootNext handoff for Omarchy.
+
+Stable-command boundary: repository identity is OmaSecBoot; the compatibility interface uses the `omarchy-secureboot` command, hook filenames, library path, and `/var/lib` state path. Do not rename those identifiers for repository-identity consistency.
 
 ## Key Files
 
@@ -29,9 +31,9 @@ sbctl, jq, gum (interactive only). Omarchy provides the rest (`limine-update`, `
 
 ## Reference Repos
 
-Cloned under `~/Projects/repos/references/`:
-- `~/Projects/repos/references/omarchy/` - Omarchy source (boot chain, Limine config, install scripts)
-- `~/Projects/repos/references/omarchy-pkgs/` - Package builds (limine-mkinitcpio-hook, limine-snapper-sync)
+Cloned under `~/Projects/quarry/`:
+- `~/Projects/quarry/omarchy/` - Omarchy source (boot chain, Limine config, install scripts)
+- `~/Projects/quarry/omarchy-pkgs/` - Package builds (limine-mkinitcpio-hook, limine-snapper-sync)
 
 ## Reference Docs
 
