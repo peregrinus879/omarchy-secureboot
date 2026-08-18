@@ -267,6 +267,8 @@ Single dispatcher (`bin/omasecboot`) sources modular libraries:
 - `windows.sh` -- Windows firmware BootNext handoff and Limine `efi_boot_entry` management
 - `status.sh` -- status display and file verification
 
+Maintainer-facing reference sources, versioned compatibility findings, workaround removal triggers, and deferred work live in [docs/maintenance.md](docs/maintenance.md). Current operational constraints remain in `AGENTS.md`.
+
 ## Troubleshooting
 
 ### Key creation or enrollment fails
