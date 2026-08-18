@@ -25,6 +25,10 @@ find_windows_boot_entry() {
   printf '%s\t%s\n' "$bootnum" "$entry_name"
 }
 
+windows_entry_is_configured() {
+  grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null
+}
+
 # Write the Windows efi_boot_entry block to limine.conf.
 # Uses Limine's efi_boot_entry protocol which sets BootNext and reboots,
 # keeping limine_x64.efi out of the Windows TPM measurement chain.
@@ -107,7 +111,7 @@ update_windows_boot_entry() {
 add_windows_boot_entry() {
   header "Windows Dual-Boot"
 
-  if grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
+  if windows_entry_is_configured; then
     pass "Windows boot entry already in limine.conf"
     return 0
   fi
@@ -173,9 +177,12 @@ ensure_windows_boot_entry() {
   qact "Windows boot entry updated in limine.conf"
 }
 
-# Set firmware BootNext to Windows Boot Manager and reboot immediately.
+# Set firmware BootNext to Windows Boot Manager without rebooting.
 # Detects by bootmgfw.efi loader path, not by label.
-reboot_to_windows() {
+set_windows_bootnext() {
+  command -v efibootmgr >/dev/null 2>&1 \
+    || die "efibootmgr not installed. Run: ${BOLD}sudo pacman -S efibootmgr${NC}"
+
   local boot_info bootnum entry_name
   boot_info=$(find_windows_boot_entry) || {
     fail "Windows Boot Manager not found in EFI boot entries"
@@ -186,6 +193,12 @@ reboot_to_windows() {
 
   efibootmgr -n "$bootnum" >/dev/null || die "Could not set BootNext"
   pass "BootNext set to ${entry_name} (Boot${bootnum})"
+  echo -e "  ${DIM}If reboot is cancelled, the next boot still enters Windows once.${NC}"
+}
+
+# Set firmware BootNext to Windows Boot Manager and reboot immediately.
+reboot_to_windows() {
+  set_windows_bootnext || return 1
   act "Rebooting to Windows. Linux resumes on the following boot."
   systemctl reboot
 }

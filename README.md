@@ -110,10 +110,12 @@ sudo omasecboot enroll
 **Step 5** *(dual-boot only)* - Add Windows to Limine boot menu:
 
 ```bash
-sudo omasecboot windows
+sudo omasecboot windows setup
 ```
 
-The first run adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Subsequent runs set BootNext and reboot to Windows immediately. You can also select Windows from the Limine boot menu directly. The pacman hooks handle package-triggered maintenance, and the Limine post-hook handles boot drift created by `limine-update` or `limine-snapper-sync`.
+This adds Windows to the Limine menu using the `efi_boot_entry` protocol (firmware BootNext). Use `sudo omasecboot windows reboot` for an immediate Windows handoff, or select Windows from the Limine boot menu. The pacman hooks handle package-triggered maintenance, and the Limine post-hook handles boot drift created by `limine-update` or `limine-snapper-sync`.
+
+For Omarchy Quattro, `omarchy/omarchy-menu.jsonc` contains a `system.windows` entry for the user-owned `~/.config/omarchy/extensions/omarchy-menu.jsonc`. It arms BootNext in a visible terminal, then calls `omarchy system reboot` so Quattro closes application windows before rebooting.
 
 ## Commands
 
@@ -129,7 +131,14 @@ Checks that firmware is in Setup Mode, then enrolls signing keys with:
 
 ### `windows`
 
-First run: detects the Windows Boot Manager in firmware boot entries (by `bootmgfw.efi` loader path), adds a Limine menu entry using the `efi_boot_entry` protocol, enrolls the config checksum, and signs EFI files. Does not reboot. Subsequent runs: sets the firmware BootNext variable to the Windows Boot Manager entry and reboots immediately. You can also select Windows from the Limine boot menu directly; it triggers the same firmware BootNext handoff. Requires `efibootmgr`.
+Provides explicit Windows firmware handoff operations:
+
+- `windows available` checks silently, without root, for a Windows Boot Manager firmware entry.
+- `windows setup` adds the Limine `efi_boot_entry`, enrolls the config checksum, and signs EFI files. It does not reboot.
+- `windows bootnext` sets firmware BootNext without rebooting.
+- `windows reboot` sets BootNext and reboots immediately.
+
+Detection matches the `bootmgfw.efi` loader path rather than the firmware label. Selecting Windows from the Limine boot menu triggers the same firmware BootNext handoff. Requires `efibootmgr`.
 
 ### `status`
 
@@ -209,7 +218,7 @@ For dual-boot setups, this repo uses Limine's `efi_boot_entry` protocol instead 
 
 This avoids BitLocker recovery caused by TPM PCR measurement drift. `limine-snapper-sync` re-enrolls `limine_x64.efi` on every snapshot change, mutating the binary. With chainloading (`protocol: efi`), Windows boot measurements include that binary, triggering BitLocker. With `efi_boot_entry`, TPM PCRs reset on the firmware reboot, and Windows measurements only include `bootmgfw.efi` (stable).
 
-The `windows` command also provides a direct reboot-to-Windows path from Linux via `efibootmgr -n` (same firmware handoff, skips the Limine menu).
+The `windows reboot` command provides a direct reboot-to-Windows path from Linux via `efibootmgr -n` (same firmware handoff, skips the Limine menu).
 
 If `omarchy-refresh-limine`, `limine-update`, or `limine-snapper-sync` overwrites `limine.conf`, the Windows entry can be lost. The pacman hooks and Limine post-hook restore the repo-managed entry automatically with the correct `efi_boot_entry` protocol. `status` also warns about unmanaged Windows EFI chainload entries (`protocol: efi`, `efi_chainload`, or `uefi`) that may still need manual cleanup.
 
@@ -343,7 +352,7 @@ sudo omasecboot sign
 
 For repo-managed Windows entries, run `sudo omasecboot sign` to restore the `protocol: efi_boot_entry` block. The managed entry uses firmware BootNext, which avoids BitLocker recovery by keeping `limine_x64.efi` out of the Windows boot measurement chain.
 
-If `status` reports an unmanaged Windows EFI chainload entry, add the managed BootNext entry with `sudo omasecboot windows`, then remove any duplicate chainload entry manually if Omarchy's bootloader scan left one behind.
+If `status` reports an unmanaged Windows EFI chainload entry, add the managed BootNext entry with `sudo omasecboot windows setup`, then remove any duplicate chainload entry manually if Omarchy's bootloader scan left one behind.
 
 ### `status` warns about Limine 12 path hashes
 
@@ -393,7 +402,7 @@ Get-WinEvent -FilterHashtable @{LogName="Application"; ProviderName="Chkdsk"} -M
 
 If Windows reports the volume is dirty, repair it from Windows with `chkdsk C: /f` and let it run at the next Windows boot. Avoid mounting Windows NTFS partitions read-write from Linux. If the issue repeats and you do not need Windows hibernation, disable Fast Startup/hibernation from Windows with `powercfg /h off`.
 
-### `windows` says Windows Boot Manager not found
+### `windows setup` says Windows Boot Manager not found
 
 Ensure the Windows disk is connected and visible in BIOS. Check with `efibootmgr -v`. The command looks for a boot entry whose loader path contains `bootmgfw.efi`.
 

@@ -61,16 +61,63 @@ cmd_enroll() {
   enroll_keys
 }
 
+cmd_windows_help() {
+  header "Windows Dual-Boot"
+  echo -e "  ${BOLD}Usage${NC}   sudo omasecboot windows <command>"
+  echo
+  echo -e "  ${BOLD}Commands${NC}"
+  echo "    available   Check for Windows Boot Manager without root or output"
+  echo "    setup       Add the firmware BootNext entry to the Limine menu"
+  echo "    bootnext    Set firmware BootNext without rebooting"
+  echo "    reboot      Set firmware BootNext and reboot immediately"
+  echo
+}
+
 cmd_windows() {
-  check_root "windows"
-  if ! grep -q "$WINDOWS_ENTRY_MARKER" "$LIMINE_CONF" 2>/dev/null; then
-    check_deps
-    require_gum
-    add_windows_boot_entry
-    return $?
+  if (( $# > 1 )); then
+    cmd_windows_help
+    fail "Expected one Windows command"
+    return 1
   fi
-  header "Boot to Windows"
-  reboot_to_windows
+
+  case "${1:-}" in
+    available)
+      find_windows_boot_entry >/dev/null
+      ;;
+    setup)
+      check_root "windows setup"
+      if windows_entry_is_configured; then
+        header "Windows Dual-Boot"
+        pass "Windows boot entry already in limine.conf"
+        return 0
+      fi
+      check_deps
+      require_gum
+      add_windows_boot_entry
+      ;;
+    bootnext)
+      check_root "windows bootnext"
+      header "Boot to Windows"
+      set_windows_bootnext
+      ;;
+    reboot)
+      check_root "windows reboot"
+      header "Boot to Windows"
+      reboot_to_windows
+      ;;
+    help|--help|-h)
+      cmd_windows_help
+      ;;
+    "")
+      cmd_windows_help
+      return 1
+      ;;
+    *)
+      cmd_windows_help
+      fail "Unknown Windows command: $1"
+      return 1
+      ;;
+  esac
 }
 
 cmd_cleanup() {
@@ -112,7 +159,7 @@ cmd_help() {
   echo -e "  ${BOLD}Commands${NC}"
   echo "    setup       Set Limine verification/enrollment state and sign EFI files"
   echo "    enroll      Enroll keys into firmware (requires Setup Mode)"
-  echo "    windows     Add Windows to Limine menu (first run) or reboot to Windows (after)"
+  echo "    windows     Set up or hand off to Windows through firmware BootNext"
   echo "    status      Show Secure Boot status and file verification"
   echo "    sign        Reassert Limine settings, repair config drift, and sign EFI files"
   echo "    cleanup     Remove stale sbctl tracked-file entries"
@@ -128,35 +175,41 @@ cmd_help() {
   echo "    2. Reboot -> BIOS -> enable Setup Mode (clear keys)"
   echo "    3. sudo omasecboot enroll"
   echo "    4. Reboot -> BIOS -> enable Secure Boot"
-  echo "    5. sudo omasecboot windows   (adds menu entry; later runs reboot to Windows)"
+  echo "    5. sudo omasecboot windows setup"
   echo
 }
 
 # --- Dispatch ----------------------------------------------------------------
 
-# Parse global flags
-while [[ "${1:-}" == --* ]]; do
-  case "$1" in
-    --quiet) QUIET=true; export QUIET; shift ;;
-    *)       break ;;
-  esac
-done
+main() {
+  # Parse global flags
+  while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+      --quiet) QUIET=true; export QUIET; shift ;;
+      *)       break ;;
+    esac
+  done
 
-case "${1:-}" in
-  setup)    cmd_setup ;;
-  enroll)   cmd_enroll ;;
-  windows)  cmd_windows ;;
-  cleanup)  cmd_cleanup ;;
-  sign)     cmd_sign ;;
-  status)   cmd_status ;;
-  help|--help|-h)  cmd_help ;;
-  version|--version|-v) echo "omasecboot ${VERSION}" ;;
-  *)
-    cmd_help
-    if [[ -n "${1:-}" ]]; then
-      fail "Unknown command: $1"
-      echo
-    fi
-    exit 1
-    ;;
-esac
+  case "${1:-}" in
+    setup)    cmd_setup ;;
+    enroll)   cmd_enroll ;;
+    windows)  shift; cmd_windows "$@" ;;
+    cleanup)  cmd_cleanup ;;
+    sign)     cmd_sign ;;
+    status)   cmd_status ;;
+    help|--help|-h)  cmd_help ;;
+    version|--version|-v) echo "omasecboot ${VERSION}" ;;
+    *)
+      cmd_help
+      if [[ -n "${1:-}" ]]; then
+        fail "Unknown command: $1"
+        echo
+      fi
+      return 1
+      ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

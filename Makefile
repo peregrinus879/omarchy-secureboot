@@ -36,3 +36,4 @@ uninstall:
 
 test:
 	bash tests/install.sh
+	bash tests/windows.sh

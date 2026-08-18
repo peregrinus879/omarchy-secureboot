@@ -437,18 +437,20 @@ show_status() {
     if [[ -f "${STATE_DIR}/windows-enabled" ]]; then
       echo -e "  ${DIM}Windows boot entry missing from limine.conf (will be restored by sign)${NC}"
     else
-      echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omasecboot windows${NC}${DIM} to add)${NC}"
+      echo -e "  ${DIM}No Windows entry (run ${BOLD}sudo omasecboot windows setup${NC}${DIM} to add)${NC}"
     fi
   fi
 
   local unmanaged_windows_chainloads
   unmanaged_windows_chainloads=$(list_unmanaged_windows_chainloads)
   if [[ -n "$unmanaged_windows_chainloads" ]]; then
-    warn "Unmanaged Windows EFI chainload entry may trigger BitLocker"
+    warn "Windows EFI chainload entry may trigger BitLocker"
     while IFS= read -r line; do
       echo -e "    ${YELLOW}!${NC} ${LIMINE_CONF}:${line}"
     done <<< "$unmanaged_windows_chainloads"
-    echo -e "  ${DIM}Run ${BOLD}sudo omasecboot windows${NC}${DIM} to add the firmware BootNext entry, then remove any duplicate chainload entry if needed.${NC}"
+    echo -e "  ${DIM}Omarchy Quattro's limine-scan creates this protocol: efi form.${NC}"
+    echo -e "  ${DIM}OmaSecBoot uses firmware BootNext to keep Limine out of the Windows measurement chain.${NC}"
+    echo -e "  ${DIM}Run ${BOLD}sudo omasecboot windows setup${NC}${DIM}, then remove any duplicate chainload entry if needed.${NC}"
   fi
 
   # Tracked files (root only)
